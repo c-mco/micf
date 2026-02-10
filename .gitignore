@@ -1,0 +1,16 @@
+# Binary
+micf
+
+# Database
+micf.db
+micf.db-shm
+micf.db-wal
+
+# Air hot reload
+tmp/
+
+# Claude Code
+.claude/
+
+# macOS
+.DS_Store
