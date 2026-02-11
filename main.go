@@ -66,6 +66,14 @@ func main() {
 	staticSub, _ := fs.Sub(staticFS, "static")
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 
+	// Serve service worker from root path for maximum scope
+	http.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		data, _ := staticFS.ReadFile("static/sw.js")
+		w.Write(data)
+	})
+
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/api/sessions", handleSessions)
 	http.HandleFunc("/api/dates", handleDates)

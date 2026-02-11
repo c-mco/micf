@@ -34,6 +34,11 @@ var PLAIN_KEYS = { Artist: 1, Dates: 1, VenueName: 1, Suburb: 1, Region: 1 };
 // Columns with filter:none that are still sortable
 var SORTABLE_NONE = { Count: 1, Distance: 1, Capacity: 1, SoldOutCount: 1 };
 
+// --- Virtual Scroll ---
+
+var ROW_HEIGHT = { compact: 28, comfortable: 36 };
+var SCROLL_BUFFER = 30;
+
 // --- LocalStorage Keys ---
 
 var LS = {
@@ -51,6 +56,7 @@ var LS = {
 
 var state = {
   shows: [],
+  filteredShows: [],
   totalShows: 0,
   searchQuery: '',
   sortKey: 'Dates',
@@ -75,6 +81,12 @@ var state = {
   calendarOpen: false,
   colChooserOpen: false,
   exportOpen: false,
+  // Worker
+  worker: null,
+  workerReady: false,
+  scrollRAF: 0,
+  _filterSeq: 0,
+  _pendingResetScroll: false,
 };
 
 // --- DOM References ---
@@ -113,6 +125,10 @@ function debounce(fn, ms) {
 function escapeHTML(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function getRowHeight() {
+  return ROW_HEIGHT[state.density] || 28;
 }
 
 // --- Initialization ---
@@ -198,8 +214,16 @@ function init() {
   // Bind events
   bindEvents();
 
-  // Initial render
+  // Initial sync render (user sees data immediately)
+  syncSort();
+  state.filteredShows = getFilteredShows();
   renderAll();
+
+  // Start worker (progressive enhancement)
+  initWorker();
+
+  // Register service worker
+  registerSW();
 
   // Fetch calendar data
   fetch('/api/dates')
@@ -215,7 +239,7 @@ function bindEvents() {
   dom.search.addEventListener('input', debounce(function() {
     state.searchQuery = dom.search.value;
     updateSearchClear();
-    renderBody();
+    requestFilter(true);
   }, 150));
 
   dom.search.addEventListener('keydown', function(e) {
@@ -224,7 +248,7 @@ function bindEvents() {
       dom.search.value = '';
       dom.search.blur();
       updateSearchClear();
-      renderBody();
+      requestFilter(true);
     }
   });
 
@@ -233,7 +257,7 @@ function bindEvents() {
     state.searchQuery = '';
     dom.search.value = '';
     updateSearchClear();
-    renderBody();
+    requestFilter(true);
   });
 
   // Table header clicks (sort)
@@ -259,14 +283,14 @@ function bindEvents() {
     var el = e.target;
     if (el.dataset.key) {
       state.filters[el.dataset.key] = el.value;
-      renderBody();
+      requestFilter(false);
     }
   });
   dom.filterRow.addEventListener('change', function(e) {
     var el = e.target;
     if (el.dataset.key) {
       state.filters[el.dataset.key] = el.value;
-      renderBody();
+      requestFilter(false);
     }
   });
 
@@ -343,6 +367,15 @@ function bindEvents() {
       renderAll();
     }
   });
+
+  // Virtual scroll
+  dom.main.addEventListener('scroll', function() {
+    if (state.scrollRAF) return;
+    state.scrollRAF = requestAnimationFrame(function() {
+      state.scrollRAF = 0;
+      renderBody();
+    });
+  }, { passive: true });
 
   // Calendar panel event delegation
   $('#calendar-panel').addEventListener('click', function(e) {
@@ -430,26 +463,53 @@ function renderFilters() {
 }
 
 function renderBody() {
-  var shows = getFilteredShows();
+  var shows = state.filteredShows;
   var cols = getVisibleColumns();
+  var colCount = cols.length;
+  var rh = getRowHeight();
+  var scrollTop = dom.main.scrollTop;
+  var viewHeight = dom.main.clientHeight;
+  var totalRows = shows.length;
 
-  var html = shows.map(function(show, idx) {
-    var rowClass = 'data-row' + (idx % 2 ? ' even' : '') +
-      (idx === state.activeRow ? ' active' : '') +
+  // Virtual scroll: calculate visible range with buffer
+  var startIdx = Math.max(0, Math.floor(scrollTop / rh) - SCROLL_BUFFER);
+  var endIdx = Math.min(totalRows, Math.ceil((scrollTop + viewHeight) / rh) + SCROLL_BUFFER);
+
+  var padTop = startIdx * rh;
+  var padBottom = Math.max(0, (totalRows - endIdx) * rh);
+
+  var html = '';
+
+  // Top spacer
+  if (padTop > 0) {
+    html += '<tr><td colspan="' + colCount + '" style="height:' + padTop + 'px;padding:0;border:0"></td></tr>';
+  }
+
+  // Visible rows only
+  for (var i = startIdx; i < endIdx; i++) {
+    var show = shows[i];
+    var rowClass = 'data-row' + (i % 2 ? ' even' : '') +
+      (i === state.activeRow ? ' active' : '') +
       (state.expandedRow === show.ID ? ' expanded' : '');
 
-    var cells = cols.map(function(col) {
+    var cells = '';
+    for (var c = 0; c < cols.length; c++) {
+      var col = cols[c];
       var align = col.align === 'right' ? ' cell-right' : col.align === 'center' ? ' cell-center' : '';
-      return '<td class="' + align + cellClass(col, show) + '">' + renderCell(col, show) + '</td>';
-    }).join('');
+      cells += '<td class="' + align + cellClass(col, show) + '">' + renderCell(col, show) + '</td>';
+    }
 
-    var row = '<tr class="' + rowClass + '" data-id="' + show.ID + '" data-idx="' + idx + '">' + cells + '</tr>';
+    html += '<tr class="' + rowClass + '" data-id="' + show.ID + '" data-idx="' + i + '">' + cells + '</tr>';
 
     if (state.expandedRow === show.ID) {
-      row += renderDetailRow(show, cols.length);
+      html += renderDetailRow(show, colCount);
     }
-    return row;
-  }).join('');
+  }
+
+  // Bottom spacer
+  if (padBottom > 0) {
+    html += '<tr><td colspan="' + colCount + '" style="height:' + padBottom + 'px;padding:0;border:0"></td></tr>';
+  }
 
   dom.tbody.innerHTML = html;
   renderFooter(shows.length);
@@ -608,13 +668,16 @@ function renderFooter(filteredCount) {
       if (key === '__search') {
         state.searchQuery = '';
         dom.search.value = '';
+        updateSearchClear();
       } else if (key === '__dates') {
         clearDates();
-        return; // clearDates already calls renderBody
+        return; // clearDates already calls requestFilter
       } else {
         state.filters[key] = '';
+        var input = dom.filterRow.querySelector('[data-key="' + key + '"]');
+        if (input) input.value = '';
       }
-      renderBody();
+      requestFilter(true);
     });
   });
 }
@@ -811,8 +874,14 @@ function sortShows(key) {
     state.sortKey = key;
     state.sortAsc = true;
   }
+  updateSortIndicators();
+  requestFilter(false);
+}
 
-  var self = this;
+// Sort state.shows in place (sync fallback when worker unavailable)
+function syncSort() {
+  var key = state.sortKey;
+  var asc = state.sortAsc;
   state.shows.sort(function(a, b) {
     var v1 = a[key], v2 = b[key];
     if (key === 'Distance') { v1 = distanceKm(a); v2 = distanceKm(b); }
@@ -820,12 +889,9 @@ function sortShows(key) {
     if (typeof v1 === 'string') { v1 = v1.toLowerCase(); v2 = (v2 || '').toLowerCase(); }
     if (v1 == null) v1 = '';
     if (v2 == null) v2 = '';
-    if (state.sortAsc) return v1 > v2 ? 1 : v1 < v2 ? -1 : 0;
+    if (asc) return v1 > v2 ? 1 : v1 < v2 ? -1 : 0;
     return v1 < v2 ? 1 : v1 > v2 ? -1 : 0;
   });
-
-  updateSortIndicators();
-  renderBody();
 }
 
 function updateSortIndicators() {
@@ -883,7 +949,7 @@ function handleKeydown(e) {
 
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
-  var shows = getFilteredShows();
+  var shows = state.filteredShows;
 
   if (e.key === 'ArrowDown') {
     e.preventDefault();
@@ -907,8 +973,15 @@ function handleKeydown(e) {
 }
 
 function scrollToActive() {
-  var row = dom.tbody.querySelector('tr.data-row[data-idx="' + state.activeRow + '"]');
-  if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  var rh = getRowHeight();
+  var targetTop = state.activeRow * rh;
+  var scrollTop = dom.main.scrollTop;
+  var viewHeight = dom.main.clientHeight;
+  if (targetTop < scrollTop + rh) {
+    dom.main.scrollTop = targetTop;
+  } else if (targetTop + rh > scrollTop + viewHeight) {
+    dom.main.scrollTop = targetTop + rh - viewHeight;
+  }
 }
 
 // --- Column Resize ---
@@ -945,7 +1018,7 @@ function toggleDate(iso) {
   state.selectedDates = Array.from(state._selectedSet).sort();
   lsSet(LS.dates, state.selectedDates);
   refreshCalendarSelection();
-  renderBody();
+  requestFilter(false);
 }
 
 function clearDates() {
@@ -953,7 +1026,7 @@ function clearDates() {
   state.selectedDates = [];
   lsSet(LS.dates, state.selectedDates);
   refreshCalendarSelection();
-  renderBody();
+  requestFilter(true);
 }
 
 function selectThisWeekend() {
@@ -971,7 +1044,7 @@ function selectThisWeekend() {
   state.selectedDates = Array.from(state._selectedSet).sort();
   lsSet(LS.dates, state.selectedDates);
   refreshCalendarSelection();
-  renderBody();
+  requestFilter(false);
 }
 
 function selectThisWeek() {
@@ -989,7 +1062,7 @@ function selectThisWeek() {
   state.selectedDates = Array.from(state._selectedSet).sort();
   lsSet(LS.dates, state.selectedDates);
   refreshCalendarSelection();
-  renderBody();
+  requestFilter(false);
 }
 
 // --- Density ---
@@ -1015,7 +1088,11 @@ function requestLocation() {
     localStorage.setItem(LS.lat, state.userLat);
     localStorage.setItem(LS.lng, state.userLng);
     updateLocationBtn();
-    renderAll();
+    renderColgroup();
+    renderHeader();
+    renderFilters();
+    renderColumnChooser();
+    requestFilter(false);
 
     // Reverse geocode for suburb name
     fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude)
@@ -1123,6 +1200,69 @@ function resetColumns() {
   state.colVisible = defaultVis;
   lsSet(LS.columns, state.colVisible);
   renderAll();
+}
+
+// --- Worker Integration ---
+
+function initWorker() {
+  try {
+    state.worker = new Worker('/static/worker.js');
+    var filterTypes = {};
+    COLUMNS.forEach(function(c) { filterTypes[c.key] = c.filter; });
+
+    state.worker.onmessage = function(e) {
+      var msg = e.data;
+      if (msg.type === 'ready') {
+        state.workerReady = true;
+        return;
+      }
+      if (msg.type === 'result') {
+        if (msg.seq !== state._filterSeq) return;
+        state.filteredShows = msg.shows;
+        if (state._pendingResetScroll && dom.main) {
+          dom.main.scrollTop = 0;
+        }
+        renderBody();
+      }
+    };
+
+    state.worker.postMessage({
+      type: 'init',
+      shows: state.shows,
+      filterTypes: filterTypes,
+    });
+  } catch (e) {
+    // Worker not supported — sync fallback already in place
+  }
+}
+
+function requestFilter(resetScroll) {
+  state._filterSeq++;
+  if (state.workerReady) {
+    state._pendingResetScroll = resetScroll;
+    state.worker.postMessage({
+      type: 'query',
+      seq: state._filterSeq,
+      sortKey: state.sortKey,
+      sortAsc: state.sortAsc,
+      searchQuery: state.searchQuery,
+      selectedDates: state.selectedDates,
+      filters: state.filters,
+      userLat: state.userLat,
+      userLng: state.userLng,
+    });
+  } else {
+    syncSort();
+    state.filteredShows = getFilteredShows();
+    if (resetScroll && dom.main) dom.main.scrollTop = 0;
+    renderBody();
+  }
+}
+
+function registerSW() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(function() {});
+  }
 }
 
 // --- Start ---
