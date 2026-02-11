@@ -1,1017 +1,113 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MICF Insights</title>
-  <link rel="icon" href="https://www.comedyfestival.com.au/favicon.ico" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <style>
-    [x-cloak] { display: none !important; }
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
-
-    /* Table structure */
-    .data-table { border-collapse: collapse; width: 100%; }
-    .data-table th, .data-table td {
-      border-right: 1px solid #e2e8f0;
-      border-bottom: 1px solid #e2e8f0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    /* Density: compact */
-    .density-compact .data-table td { padding: 2px 6px; font-size: 12px; }
-    .density-compact .data-table th { padding: 2px 6px; }
-    .density-compact .filter-input { padding: 1px 4px; font-size: 10px; }
-
-    /* Density: comfortable */
-    .density-comfortable .data-table td { padding: 6px 10px; font-size: 13px; }
-    .density-comfortable .data-table th { padding: 4px 8px; }
-    .density-comfortable .filter-input { padding: 2px 6px; font-size: 11px; }
-
-    /* Header row */
-    .data-table thead th {
-      background: #f1f5f9;
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      user-select: none;
-      border-bottom: 2px solid #cbd5e1;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      color: #64748b;
-      font-weight: 600;
-    }
-    .data-table thead th:hover { background: #e2e8f0; }
-
-    /* Filter row */
-    .filter-row th {
-      background: #f8fafc;
-      position: sticky;
-      z-index: 19;
-      border-bottom: 1px solid #e2e8f0;
-      font-weight: normal;
-    }
-
-    .filter-input {
-      width: 100%;
-      border: 1px solid #e2e8f0;
-      border-radius: 3px;
-      background: white;
-    }
-    .filter-input:focus { outline: none; border-color: #3b82f6; }
-
-    /* Resize handle */
-    .resize-handle {
-      position: absolute; right: 0; top: 0; bottom: 0;
-      width: 4px; cursor: col-resize; background: transparent;
-    }
-    .resize-handle:hover, .resize-handle.active { background: #3b82f6; }
-
-    /* Rows */
-    .data-row:nth-child(even) { background: #f8fafc; }
-    .data-row:hover { background: #eff6ff; transition: background 0.1s; }
-    .data-row.active-row { outline: 2px solid #3b82f6; outline-offset: -2px; }
-    .data-row.expanded { background: #eff6ff; }
-
-    /* Sort indicator */
-    .sort-ind { opacity: 0; transition: opacity 0.15s; font-size: 10px; }
-    th:hover .sort-ind { opacity: 0.4; }
-    .sort-ind.active { opacity: 1; color: #2563eb; }
-
-    /* Badges */
-    .badge {
-      display: inline-flex; align-items: center;
-      padding: 0 4px; border-radius: 3px;
-      font-size: 10px; font-weight: 500; line-height: 16px; white-space: nowrap;
-    }
-
-    /* Mini table */
-    .mini-table th { background: #f1f5f9; padding: 2px 6px; font-size: 10px; text-align: left; border: 1px solid #e2e8f0; }
-    .mini-table td { padding: 2px 6px; font-size: 11px; border: 1px solid #e2e8f0; }
-
-    /* Dropdown panels (column chooser + calendar) */
-    .dropdown-panel {
-      position: absolute; top: 100%; margin-top: 4px;
-      background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 50;
-    }
-
-    /* Calendar */
-    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
-    .cal-header { font-size: 10px; color: #94a3b8; text-align: center; padding: 2px 0; font-weight: 600; }
-    .cal-day {
-      aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      font-size: 12px; border-radius: 6px; cursor: pointer; position: relative;
-      transition: all 0.1s;
-    }
-    .cal-day.has-shows:hover { background: #dbeafe; }
-    .cal-day.selected { background: #2563eb; color: white; font-weight: 600; }
-    .cal-day.selected:hover { background: #1d4ed8; }
-    .cal-day.no-shows { color: #cbd5e1; cursor: default; }
-    .cal-day.today { box-shadow: inset 0 0 0 2px #f59e0b; }
-    .cal-day .show-count { font-size: 8px; opacity: 0.6; line-height: 1; }
-    .cal-day.selected .show-count { opacity: 0.8; }
-    .cal-day.density-low { background: #f0fdf4; }
-    .cal-day.density-med { background: #dcfce7; }
-    .cal-day.density-high { background: #bbf7d0; }
-    .cal-day.selected.density-low,
-    .cal-day.selected.density-med,
-    .cal-day.selected.density-high { background: #2563eb; }
-
-    /* Detail panel */
-    .detail-panel { max-height: 0; overflow: hidden; transition: max-height 0.25s ease-out; }
-    .detail-panel.open { max-height: 600px; transition: max-height 0.35s ease-in; }
-
-    /* Footer pills */
-    .filter-pill {
-      display: inline-flex; align-items: center; gap: 3px;
-      padding: 1px 6px; border-radius: 3px; font-size: 10px;
-      background: #dbeafe; color: #1e40af; cursor: pointer;
-    }
-    .filter-pill:hover { background: #bfdbfe; }
-    .filter-pill .pill-x { font-weight: bold; font-size: 11px; }
-  </style>
+  <link rel="icon" href="https://www.comedyfestival.com.au/favicon.ico">
+  <link rel="stylesheet" href="/static/app.css">
 </head>
-<body
-  x-cloak
-  x-data="app()"
-  @keydown.window="handleKeydown($event)"
-  :class="'density-' + density"
-  class="overflow-hidden h-screen flex flex-col bg-white text-slate-800"
->
+<body class="density-compact">
 
-  <!-- ====== HEADER ====== -->
-  <header class="bg-slate-800 text-white shrink-0">
-    <div class="flex items-center gap-3 px-3 py-2">
-      <!-- Logo -->
-      <a href="/" class="flex items-center gap-2 shrink-0 border-r border-slate-600 pr-3">
-        <img src="https://www.comedyfestival.com.au/images/micf-logo.svg" alt="MICF" class="h-5 brightness-0 invert opacity-90" onerror="this.style.display='none'" />
-        <span class="font-bold italic uppercase tracking-tighter text-sm">Insights</span>
-      </a>
+  <!-- Header -->
+  <header class="header">
+    <a href="/" class="logo">
+      <img src="https://www.comedyfestival.com.au/images/micf-logo.svg" alt="MICF" onerror="this.style.display='none'">
+      <span>Insights</span>
+    </a>
 
-      <!-- Search (instant, no page reload) -->
-      <div class="relative shrink-0">
-        <input
-          type="text"
-          x-ref="searchInput"
-          x-model.debounce.150ms="searchQuery"
-          @keydown.escape="searchQuery = ''; $refs.searchInput.blur()"
-          placeholder="Search shows, artists, venues..."
-          class="bg-slate-700 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 w-64 pl-7"
-        />
-        <svg class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-        <button x-show="searchQuery" @click="searchQuery = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs">&times;</button>
-      </div>
-
-      <div class="flex-grow"></div>
-
-      <!-- Location -->
-      <button @click="requestLocation()" class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs border border-slate-600 shrink-0">
-        <span x-show="!userLat">Enable Location</span>
-        <span x-show="userLat" x-text="userSuburb || 'Located'"></span>
-      </button>
-      <button
-        @click="toggleUnits()"
-        x-show="userLat"
-        class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-[10px] border border-slate-600"
-        x-text="useImperial ? 'mi' : 'km'"
-      ></button>
-
-      <!-- Calendar dropdown -->
-      <div class="relative shrink-0">
-        <button
-          @click="showCalendar = !showCalendar; showColChooser = false; showExport = false"
-          class="px-2 py-1 rounded text-xs border shrink-0"
-          :class="selectedDates.length > 0 ? 'bg-blue-600 border-blue-500 hover:bg-blue-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'"
-        >
-          <span x-text="selectedDates.length > 0 ? 'Dates (' + selectedDates.length + ')' : 'Dates'"></span>
-        </button>
-        <div
-          x-show="showCalendar"
-          @click.outside="showCalendar = false"
-          x-transition
-          class="dropdown-panel right-0"
-          style="width: 320px;"
-        >
-          <!-- Month navigation -->
-          <template x-for="(month, mi) in calendarMonths" :key="month.key">
-            <div class="p-3" :class="mi > 0 ? 'border-t border-slate-100' : ''">
-              <div class="text-sm font-semibold text-slate-700 mb-2 text-center" x-text="month.label"></div>
-              <!-- Weekday headers -->
-              <div class="cal-grid mb-1">
-                <template x-for="d in ['Mo','Tu','We','Th','Fr','Sa','Su']">
-                  <div class="cal-header" x-text="d"></div>
-                </template>
-              </div>
-              <!-- Day cells -->
-              <div class="cal-grid">
-                <!-- Empty cells for offset -->
-                <template x-for="_ in month.offset" :key="'pad-' + mi + '-' + _">
-                  <div></div>
-                </template>
-                <!-- Actual days -->
-                <template x-for="day in month.days" :key="day.iso">
-                  <div
-                    class="cal-day"
-                    :class="{
-                      'has-shows': day.count > 0,
-                      'no-shows': day.count === 0,
-                      'selected': isDateSelected(day.iso),
-                      'today': day.isToday,
-                      'density-low': day.count > 0 && day.count <= day.q1 && !isDateSelected(day.iso),
-                      'density-med': day.count > day.q1 && day.count <= day.q2 && !isDateSelected(day.iso),
-                      'density-high': day.count > day.q2 && !isDateSelected(day.iso)
-                    }"
-                    @click="day.count > 0 && toggleDate(day.iso)"
-                  >
-                    <span x-text="day.num"></span>
-                    <span class="show-count" x-show="day.count > 0" x-text="day.count"></span>
-                  </div>
-                </template>
-              </div>
-            </div>
-          </template>
-          <!-- Quick actions -->
-          <div class="border-t border-slate-200 p-2 flex items-center gap-2">
-            <button @click="selectThisWeekend()" class="text-[10px] text-blue-600 hover:underline">This weekend</button>
-            <button @click="selectThisWeek()" class="text-[10px] text-blue-600 hover:underline">This week</button>
-            <div class="flex-grow"></div>
-            <button @click="clearDates()" class="text-[10px] text-red-500 hover:underline" x-show="selectedDates.length > 0">Clear all</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Column chooser -->
-      <div class="relative shrink-0">
-        <button
-          @click="showColChooser = !showColChooser; showCalendar = false; showExport = false"
-          class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs border border-slate-600"
-        >Columns</button>
-        <div x-show="showColChooser" @click.outside="showColChooser = false" x-transition class="dropdown-panel right-0" style="width: 280px; max-height: 400px; overflow-y: auto;">
-          <div class="p-2 border-b border-slate-200 flex items-center justify-between">
-            <span class="text-slate-800 text-xs font-semibold">Show/Hide Columns</span>
-            <button @click="resetColumns()" class="text-[10px] text-blue-600 hover:underline">Reset</button>
-          </div>
-          <template x-for="group in columnGroups" :key="group.name">
-            <div class="px-2 py-1">
-              <div class="text-[10px] uppercase text-slate-400 font-semibold mb-1" x-text="group.name"></div>
-              <template x-for="col in group.cols" :key="col.key">
-                <label class="flex items-center gap-2 py-0.5 text-slate-700 text-xs cursor-pointer" :class="col.locked ? 'opacity-50' : ''">
-                  <input
-                    type="checkbox"
-                    :checked="colVisible[col.key]"
-                    :disabled="col.locked"
-                    @change="toggleColumn(col.key)"
-                    class="rounded text-blue-600"
-                  />
-                  <span x-text="col.label"></span>
-                </label>
-              </template>
-            </div>
-          </template>
-        </div>
-      </div>
-
-      <!-- Export dropdown -->
-      <div class="relative shrink-0">
-        <button
-          @click="showExport = !showExport; showCalendar = false; showColChooser = false"
-          class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs border border-slate-600"
-        >Export</button>
-        <div x-show="showExport" @click.outside="showExport = false" x-transition class="dropdown-panel right-0" style="width: 240px;">
-          <div class="p-2 border-b border-slate-200">
-            <span class="text-slate-800 text-xs font-semibold">Export Data</span>
-          </div>
-          <div class="p-1">
-            <a href="/export/json" download class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 text-xs">
-              <span class="w-5 text-center text-slate-400">{}</span>
-              <div>
-                <div class="font-medium">JSON</div>
-                <div class="text-[10px] text-slate-400">Structured data, all tables</div>
-              </div>
-            </a>
-            <a href="/export/csv" download class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 text-xs">
-              <span class="w-5 text-center text-slate-400">csv</span>
-              <div>
-                <div class="font-medium">CSV (ZIP)</div>
-                <div class="text-[10px] text-slate-400">3 CSV files in a ZIP archive</div>
-              </div>
-            </a>
-            <a href="/export/excel" download class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 text-xs">
-              <span class="w-5 text-center text-emerald-500">xl</span>
-              <div>
-                <div class="font-medium">Excel (.xlsx)</div>
-                <div class="text-[10px] text-slate-400">Spreadsheet with 3 sheets</div>
-              </div>
-            </a>
-            <a href="/export/db" download class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 text-xs">
-              <span class="w-5 text-center text-slate-400">db</span>
-              <div>
-                <div class="font-medium">SQLite Database</div>
-                <div class="text-[10px] text-slate-400">Raw database file</div>
-              </div>
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <!-- Density toggle -->
-      <button
-        @click="toggleDensity()"
-        class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs border border-slate-600 shrink-0"
-        x-text="density === 'compact' ? 'Comfortable' : 'Compact'"
-      ></button>
+    <div class="search-wrap">
+      <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+      </svg>
+      <input type="text" id="search-input" class="search-input" placeholder="Search shows, artists, venues...">
+      <button id="search-clear" class="search-clear hidden">&times;</button>
     </div>
+
+    <div class="spacer"></div>
+
+    <!-- Location -->
+    <button id="location-btn" class="toolbar-btn">Enable Location</button>
+    <button id="unit-btn" class="unit-btn hidden">km</button>
+
+    <!-- Calendar -->
+    <div class="dropdown-wrap">
+      <button id="date-btn" class="toolbar-btn">Dates</button>
+      <div id="calendar-panel" class="dropdown-panel calendar-panel">
+        <div id="calendar-content"></div>
+      </div>
+    </div>
+
+    <!-- Column chooser -->
+    <div class="dropdown-wrap">
+      <button id="colchooser-btn" class="toolbar-btn">Columns</button>
+      <div id="colchooser-panel" class="dropdown-panel colchooser-panel">
+        <div class="dropdown-header">
+          <span>Show/Hide Columns</span>
+          <button id="colchooser-reset">Reset</button>
+        </div>
+        <div id="colchooser-list"></div>
+      </div>
+    </div>
+
+    <!-- Export -->
+    <div class="dropdown-wrap">
+      <button id="export-btn" class="toolbar-btn">Export</button>
+      <div id="export-panel" class="dropdown-panel export-panel">
+        <div class="dropdown-header"><span>Export Data</span></div>
+        <a href="/export/json" download class="export-item">
+          <span class="export-icon">{}</span>
+          <div><div class="export-label">JSON</div><div class="export-desc">Structured data, all tables</div></div>
+        </a>
+        <a href="/export/csv" download class="export-item">
+          <span class="export-icon">csv</span>
+          <div><div class="export-label">CSV (ZIP)</div><div class="export-desc">3 CSV files in a ZIP archive</div></div>
+        </a>
+        <a href="/export/excel" download class="export-item">
+          <span class="export-icon green">xl</span>
+          <div><div class="export-label">Excel (.xlsx)</div><div class="export-desc">Spreadsheet with 3 sheets</div></div>
+        </a>
+        <a href="/export/db" download class="export-item">
+          <span class="export-icon">db</span>
+          <div><div class="export-label">SQLite Database</div><div class="export-desc">Raw database file</div></div>
+        </a>
+      </div>
+    </div>
+
+    <!-- Density -->
+    <button id="density-btn" class="toolbar-btn">Comfortable</button>
   </header>
 
-  <!-- ====== MAIN TABLE ====== -->
-  <main class="flex-grow overflow-auto" x-ref="gridScroll">
-    <table class="data-table" :style="tableStyle()">
+  <!-- Table -->
+  <main id="main-scroll" class="main">
+    <table id="data-table" class="data-table">
+      <colgroup id="colgroup"></colgroup>
       <thead>
-        <!-- Header row -->
-        <tr>
-          <template x-for="col in visibleColumns" :key="col.key">
-            <th
-              @click="isSortable(col) ? sort(col.key) : null"
-              class="relative"
-              :class="[
-                col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left',
-                isSortable(col) ? 'cursor-pointer' : ''
-              ]"
-              :style="colStyle(col)"
-            >
-              <span x-text="col.label"></span>
-              <span
-                class="sort-ind ml-0.5"
-                :class="sortKey === col.key ? 'active' : ''"
-                x-text="sortKey === col.key ? (sortAsc ? '\u25B2' : '\u25BC') : '\u21D5'"
-                x-show="isSortable(col)"
-              ></span>
-              <div class="resize-handle" @mousedown.stop.prevent="startResize($event, col.key)"></div>
-            </th>
-          </template>
-        </tr>
-        <!-- Filter row -->
-        <tr class="filter-row">
-          <template x-for="col in visibleColumns" :key="'f-' + col.key">
-            <th>
-              <template x-if="col.filter === 'text'">
-                <input type="text" class="filter-input" placeholder="Filter..." x-model="filters[col.key]" @keydown.stop />
-              </template>
-              <template x-if="col.filter === 'select'">
-                <select class="filter-input" x-model="filters[col.key]" @keydown.stop>
-                  <option value="">All</option>
-                  <template x-for="opt in filterOptions[col.key]" :key="opt">
-                    <option :value="opt" x-text="opt"></option>
-                  </template>
-                </select>
-              </template>
-              <template x-if="col.filter === 'bool'">
-                <select class="filter-input" x-model="filters[col.key]" @keydown.stop>
-                  <option value="">All</option>
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                </select>
-              </template>
-              <template x-if="col.filter === 'none'">
-                <span></span>
-              </template>
-            </th>
-          </template>
-        </tr>
+        <tr id="header-row"></tr>
+        <tr id="filter-row" class="filter-row"></tr>
       </thead>
-      <tbody>
-        <template x-for="(show, idx) in filteredShows" :key="show.ID">
-          <tr>
-            <td :colspan="visibleColumns.length" style="padding:0;border:0;">
-              <table class="data-table" style="table-layout:fixed;">
-                <!-- Data row -->
-                <tr
-                  class="data-row cursor-pointer"
-                  :class="{
-                    'active-row': activeRow === idx,
-                    'expanded': expandedRow === show.ID
-                  }"
-                  @click="toggleExpand(show.ID, idx)"
-                >
-                  <template x-for="col in visibleColumns" :key="'c-' + col.key">
-                    <td
-                      :class="[
-                        col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left',
-                        cellClass(col, show)
-                      ]"
-                      :style="colStyle(col)"
-                    >
-                      <!-- Title: linked -->
-                      <template x-if="col.key === 'Title'">
-                        <a
-                          :href="'https://www.comedyfestival.com.au' + show.URL"
-                          target="_blank" @click.stop
-                          class="text-blue-600 hover:underline font-semibold"
-                          x-text="show.Title"
-                        ></a>
-                      </template>
-                      <!-- Distance: linked -->
-                      <template x-if="col.key === 'Distance'">
-                        <a :href="directionsUrl(show)" target="_blank" @click.stop
-                          class="text-green-600 hover:underline text-[10px]"
-                          x-text="distanceDisplay(show)"></a>
-                      </template>
-                      <!-- HasTightArse: badge -->
-                      <template x-if="col.key === 'HasTightArse'">
-                        <span x-show="show.HasTightArse" class="badge bg-emerald-100 text-emerald-700">$</span>
-                      </template>
-                      <!-- Bool badge columns -->
-                      <template x-if="col.key === 'Wheelchair'">
-                        <span x-show="show.Wheelchair" class="badge bg-blue-100 text-blue-700">Yes</span>
-                      </template>
-                      <template x-if="col.key === 'AssistedHearing'">
-                        <span x-show="show.AssistedHearing" class="badge bg-violet-100 text-violet-700">Yes</span>
-                      </template>
-                      <template x-if="col.key === 'HasSignInterpreter'">
-                        <span x-show="show.HasSignInterpreter" class="badge bg-indigo-100 text-indigo-700">Yes</span>
-                      </template>
-                      <template x-if="col.key === 'HasRelaxed'">
-                        <span x-show="show.HasRelaxed" class="badge bg-teal-100 text-teal-700">Yes</span>
-                      </template>
-                      <template x-if="col.key === 'AdultsOnly'">
-                        <span x-show="show.AdultsOnly" class="badge bg-rose-100 text-rose-700">18+</span>
-                      </template>
-                      <template x-if="col.key === 'OnlineShow'">
-                        <span x-show="show.OnlineShow" class="badge bg-sky-100 text-sky-700">Yes</span>
-                      </template>
-                      <template x-if="col.key === 'DisabledToilets'">
-                        <span x-show="show.DisabledToilets" class="badge bg-blue-100 text-blue-700">Yes</span>
-                      </template>
-                      <!-- SoldOutCount: number with color -->
-                      <template x-if="col.key === 'SoldOutCount'">
-                        <span :class="show.SoldOutCount > 0 ? 'text-red-600 font-semibold' : 'text-slate-400'" x-text="show.SoldOutCount"></span>
-                      </template>
-                      <!-- Count: number -->
-                      <template x-if="col.key === 'Count'">
-                        <span :class="show.Count <= 1 ? 'text-orange-600 font-semibold' : ''" x-text="show.Count"></span>
-                      </template>
-                      <!-- Capacity: number -->
-                      <template x-if="col.key === 'Capacity'">
-                        <span class="text-slate-400" x-text="show.Capacity || '-'"></span>
-                      </template>
-                      <!-- Status: text -->
-                      <template x-if="col.key === 'Status'">
-                        <span class="text-slate-500" x-text="show.Status || '-'"></span>
-                      </template>
-                      <!-- Plain text columns -->
-                      <template x-if="isPlainCol(col.key)">
-                        <span x-text="show[col.key]"></span>
-                      </template>
-                    </td>
-                  </template>
-                </tr>
-                <!-- Detail panel -->
-                <tr x-show="expandedRow === show.ID">
-                  <td :colspan="visibleColumns.length" class="border-b-2 border-blue-200" style="padding:0;">
-                    <div class="detail-panel" :class="expandedRow === show.ID ? 'open' : ''">
-                      <div class="p-3 bg-slate-50 border-t border-blue-100">
-                        <div class="flex gap-4">
-                          <div x-show="show.SmallImageURL" class="shrink-0">
-                            <img :src="show.SmallImageURL" class="w-24 h-24 object-cover rounded shadow" />
-                          </div>
-                          <div class="flex-grow min-w-0">
-                            <div class="flex items-center gap-2 mb-2 flex-wrap">
-                              <span class="font-bold text-sm" x-text="show.Title"></span>
-                              <span class="text-slate-400 text-xs" x-text="show.Artist"></span>
-                              <span class="text-slate-300 text-xs" x-text="show.VenueName"></span>
-                              <a :href="'https://www.comedyfestival.com.au' + show.URL" target="_blank" class="text-blue-600 hover:underline text-xs ml-auto">MICF Page</a>
-                              <a x-show="show.Lat && show.Lng" :href="directionsUrl(show)" target="_blank" class="text-green-600 hover:underline text-xs">Maps</a>
-                            </div>
-                            <div x-show="!sessionCache[show.ID]" class="text-slate-400 text-xs py-2">Loading sessions...</div>
-                            <div x-show="sessionCache[show.ID]" class="max-h-48 overflow-auto">
-                              <table class="mini-table w-full border-collapse">
-                                <thead>
-                                  <tr><th>Date</th><th>Time</th><th>Status</th><th>Type</th><th>Tags</th></tr>
-                                </thead>
-                                <tbody>
-                                  <template x-for="sess in (sessionCache[show.ID] || [])" :key="sess.SessionID || sess.FullDate">
-                                    <tr :class="sess.IsSoldOut ? 'text-slate-400 line-through' : sess.Cancelled ? 'text-red-400 line-through' : ''">
-                                      <td x-text="sess.Date"></td>
-                                      <td x-text="sess.Time"></td>
-                                      <td>
-                                        <span x-show="sess.IsSoldOut" class="badge bg-red-100 text-red-600">Sold Out</span>
-                                        <span x-show="sess.Cancelled" class="badge bg-slate-200 text-slate-500">Cancelled</span>
-                                        <span x-show="!sess.IsSoldOut && !sess.Cancelled" class="badge bg-green-100 text-green-700" x-text="sess.Status || 'Available'"></span>
-                                      </td>
-                                      <td class="text-slate-500" x-text="sess.ShowType || '-'"></td>
-                                      <td>
-                                        <span x-show="sess.IsTightArse" class="badge bg-emerald-100 text-emerald-700">$</span>
-                                        <span x-show="sess.HasSignInterpreter" class="badge bg-indigo-100 text-indigo-700">Auslan</span>
-                                        <span x-show="sess.IsRelaxed" class="badge bg-teal-100 text-teal-700">Relaxed</span>
-                                        <span x-show="sess.IsFilmed" class="badge bg-slate-200 text-slate-600">Filmed</span>
-                                        <span x-show="sess.Preview" class="badge bg-yellow-100 text-yellow-700">Preview</span>
-                                        <span x-show="sess.ExtraShow" class="badge bg-orange-100 text-orange-600">Extra</span>
-                                      </td>
-                                    </tr>
-                                  </template>
-                                </tbody>
-                              </table>
-                            </div>
-                            <div x-show="show.AccessibilityDetails" class="mt-2 text-xs text-slate-500 max-w-none" x-html="show.AccessibilityDetails"></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </template>
-      </tbody>
+      <tbody id="tbody"></tbody>
     </table>
   </main>
 
-  <!-- ====== FOOTER ====== -->
-  <footer class="bg-slate-50 border-t border-slate-200 px-3 py-1 flex items-center gap-3 shrink-0 text-xs text-slate-500">
-    <span x-text="'Showing ' + filteredShows.length + ' of ' + allShows.length + ' shows'"></span>
-    <span class="text-slate-300" x-show="totalShows > allShows.length" x-text="'(' + totalShows + ' total in DB)'"></span>
-
-    <!-- Active filter pills -->
-    <template x-for="pill in activePills" :key="pill.key">
-      <span class="filter-pill" @click="clearPill(pill)">
-        <span x-text="pill.label + ': ' + pill.value"></span>
-        <span class="pill-x">&times;</span>
-      </span>
-    </template>
-    <span x-show="searchQuery" class="filter-pill" @click="searchQuery = ''">
-      <span x-text="'Search: ' + searchQuery"></span>
-      <span class="pill-x">&times;</span>
-    </span>
-    <span x-show="selectedDates.length > 0" class="filter-pill" @click="clearDates()">
-      <span x-text="selectedDates.length + ' date' + (selectedDates.length > 1 ? 's' : '') + ' selected'"></span>
-      <span class="pill-x">&times;</span>
-    </span>
-
-    <div class="flex-grow"></div>
-    <span class="text-slate-400 text-[10px]">Press <kbd class="px-1 py-0.5 bg-slate-200 rounded text-slate-600">/</kbd> to search</span>
+  <!-- Footer -->
+  <footer class="footer">
+    <span id="footer-count" class="footer-count"></span>
+    <span id="footer-total" class="footer-total" style="display:none"></span>
+    <div id="footer-pills" class="footer-pills"></div>
+    <span class="footer-hint">Press <kbd>/</kbd> to search</span>
   </footer>
 
+  <!-- Embedded show data from server -->
   <script>
-    function app() {
-      // ---- Column definitions ----
-      const allColumns = [
-        { key: 'Title',              label: 'Title',         width: 280, minWidth: 120, filter: 'text',   align: 'left',   visible: true,  locked: true,  group: 'Show Info' },
-        { key: 'Artist',             label: 'Artist',        width: 160, minWidth: 80,  filter: 'text',   align: 'left',   visible: true,  locked: false, group: 'Show Info' },
-        { key: 'Dates',              label: 'Dates',         width: 110, minWidth: 70,  filter: 'text',   align: 'left',   visible: true,  locked: false, group: 'Show Info' },
-        { key: 'VenueName',          label: 'Venue',         width: 170, minWidth: 80,  filter: 'text',   align: 'left',   visible: true,  locked: false, group: 'Venue' },
-        { key: 'Suburb',             label: 'Suburb',        width: 100, minWidth: 60,  filter: 'select', align: 'left',   visible: true,  locked: false, group: 'Venue' },
-        { key: 'Region',             label: 'Region',        width: 90,  minWidth: 60,  filter: 'select', align: 'left',   visible: true,  locked: false, group: 'Venue' },
-        { key: 'Distance',           label: 'Dist',          width: 65,  minWidth: 50,  filter: 'none',   align: 'right',  visible: true,  locked: false, group: 'Venue' },
-        { key: 'Count',              label: 'Sessions',      width: 65,  minWidth: 45,  filter: 'none',   align: 'right',  visible: true,  locked: false, group: 'Sessions' },
-        { key: 'HasTightArse',       label: 'Tight Arse',    width: 75,  minWidth: 50,  filter: 'bool',   align: 'center', visible: true,  locked: false, group: 'Sessions' },
-        { key: 'Capacity',           label: 'Capacity',      width: 70,  minWidth: 45,  filter: 'none',   align: 'right',  visible: false, locked: false, group: 'Venue' },
-        { key: 'SoldOutCount',       label: 'Sold Out',      width: 70,  minWidth: 45,  filter: 'none',   align: 'right',  visible: false, locked: false, group: 'Sessions' },
-        { key: 'Wheelchair',         label: 'Wheelchair',    width: 80,  minWidth: 50,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Accessibility' },
-        { key: 'AssistedHearing',    label: 'Hearing Loop',  width: 90,  minWidth: 50,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Accessibility' },
-        { key: 'HasSignInterpreter', label: 'Auslan',        width: 65,  minWidth: 50,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Accessibility' },
-        { key: 'HasRelaxed',         label: 'Relaxed',       width: 65,  minWidth: 50,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Accessibility' },
-        { key: 'AdultsOnly',         label: '18+',           width: 50,  minWidth: 40,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Show Info' },
-        { key: 'OnlineShow',         label: 'Online',        width: 60,  minWidth: 45,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Show Info' },
-        { key: 'Status',             label: 'Status',        width: 80,  minWidth: 50,  filter: 'text',   align: 'left',   visible: false, locked: false, group: 'Show Info' },
-        { key: 'DisabledToilets',    label: 'Accessible WC', width: 90,  minWidth: 50,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Accessibility' },
-      ];
-
-      const plainKeys = new Set(['Artist', 'Dates', 'VenueName', 'Suburb', 'Region']);
-      const sortableNoneKeys = new Set(['Count', 'Distance', 'Capacity', 'SoldOutCount']);
-
-      const defaultVisible = {};
-      allColumns.forEach(c => defaultVisible[c.key] = c.visible);
-
-      let savedCols = null;
-      try { savedCols = JSON.parse(localStorage.getItem('micf_columns')); } catch(e) {}
-      const initVisible = savedCols || { ...defaultVisible };
-
-      let savedWidths = {};
-      try { savedWidths = JSON.parse(localStorage.getItem('micf_col_widths')) || {}; } catch(e) {}
-      const initWidths = {};
-      allColumns.forEach(c => { initWidths[c.key] = savedWidths[c.key] || c.width; });
-
-      const groupOrder = ['Show Info', 'Venue', 'Sessions', 'Accessibility'];
-      const columnGroups = groupOrder.map(name => ({
-        name,
-        cols: allColumns.filter(c => c.group === name)
-      }));
-
-      // Load saved date selections
-      let savedDates = [];
-      try { savedDates = JSON.parse(localStorage.getItem('micf_selected_dates')) || []; } catch(e) {}
-
-      return {
-        allShows: {{ .Shows }},
-        totalShows: {{ .TotalShows }},
-        searchQuery: '{{ .Search }}',
-        sortKey: 'Dates',
-        sortAsc: true,
-        activeRow: -1,
-        expandedRow: null,
-        sessionCache: {},
-        density: localStorage.getItem('micf_density') || 'compact',
-        userLat: parseFloat(localStorage.getItem('micf_user_lat')) || 0,
-        userLng: parseFloat(localStorage.getItem('micf_user_lng')) || 0,
-        userSuburb: localStorage.getItem('micf_user_suburb') || '',
-        useImperial: localStorage.getItem('micf_use_imperial') === 'true',
-        showColChooser: false,
-        showCalendar: false,
-        showExport: false,
-        resizing: null,
-        colVisible: initVisible,
-        colWidths: initWidths,
-        allColumnDefs: allColumns,
-        columnGroups,
-
-        // Calendar state
-        dateShowCounts: {},  // { "2026-03-18": 42, ... }
-        calendarMonths: [],  // built from /api/dates
-        selectedDates: savedDates,
-        _selectedSet: new Set(savedDates),
-
-        filters: {},
-
-        filterOptions: {
-          Suburb: ({{ .Suburbs }} || []).sort(),
-          Region: ({{ .Regions }} || []).sort()
-        },
-
-        init() {
-          allColumns.forEach(c => { this.filters[c.key] = ''; });
-          // Precompute search fields for fast filtering
-          this.allShows.forEach(show => {
-            show._haystack = (show.Title + ' ' + show.Artist + ' ' + show.VenueName + ' ' + show.Suburb + ' ' + show.Region).toLowerCase();
-            show._dates = show.SessionDates ? show.SessionDates.split(',') : [];
-          });
-          // Fetch dates for calendar
-          fetch('/api/dates')
-            .then(r => r.json())
-            .then(data => { this.buildCalendar(data); })
-            .catch(() => {});
-        },
-
-        buildCalendar(data) {
-          // Build lookup: ISO date → show count
-          const counts = {};
-          let maxCount = 0;
-          data.forEach(d => {
-            counts[d.date] = d.showCount;
-            if (d.showCount > maxCount) maxCount = d.showCount;
-          });
-          this.dateShowCounts = counts;
-
-          // Determine density quartiles
-          const q1 = Math.floor(maxCount * 0.33);
-          const q2 = Math.floor(maxCount * 0.66);
-
-          // Get min/max months from the dates (ISO format: "2026-03-18")
-          const isoKeys = Object.keys(counts).sort();
-          if (isoKeys.length === 0) return;
-
-          const firstDate = new Date(isoKeys[0] + 'T00:00:00');
-          const lastDate = new Date(isoKeys[isoKeys.length - 1] + 'T00:00:00');
-
-          const months = [];
-          const todayISO = new Date().toISOString().slice(0, 10);
-          let cursor = new Date(firstDate.getFullYear(), firstDate.getMonth(), 1);
-
-          while (cursor <= lastDate) {
-            const year = cursor.getFullYear();
-            const month = cursor.getMonth();
-            const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-            const label = monthNames[month] + ' ' + year;
-            const key = year + '-' + String(month + 1).padStart(2, '0');
-
-            // Day of week for 1st of month (0=Sun, convert to Mon=0)
-            const firstDow = new Date(year, month, 1).getDay();
-            const offset = firstDow === 0 ? 6 : firstDow - 1;  // Mon-based
-
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const days = [];
-            for (let d = 1; d <= daysInMonth; d++) {
-              const iso = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-              days.push({
-                num: d,
-                iso: iso,
-                count: counts[iso] || 0,
-                isToday: iso === todayISO,
-                q1: q1,
-                q2: q2
-              });
-            }
-
-            months.push({ key, label, offset, days });
-            cursor = new Date(year, month + 1, 1);
-          }
-
-          this.calendarMonths = months;
-        },
-
-        // ---- Date selection ----
-        isDateSelected(iso) {
-          return this._selectedSet.has(iso);
-        },
-
-        toggleDate(iso) {
-          if (this._selectedSet.has(iso)) {
-            this._selectedSet.delete(iso);
-          } else {
-            this._selectedSet.add(iso);
-          }
-          this.selectedDates = [...this._selectedSet].sort();
-          localStorage.setItem('micf_selected_dates', JSON.stringify(this.selectedDates));
-        },
-
-        clearDates() {
-          this._selectedSet.clear();
-          this.selectedDates = [];
-          localStorage.setItem('micf_selected_dates', JSON.stringify(this.selectedDates));
-        },
-
-        selectThisWeekend() {
-          // Find Fri, Sat, Sun of this week (or next if past Sunday)
-          const today = new Date();
-          const dow = today.getDay(); // 0=Sun
-          const daysToFri = dow <= 5 ? (5 - dow) : (5 + 7 - dow);
-          const fri = new Date(today);
-          fri.setDate(today.getDate() + daysToFri);
-
-          for (let i = 0; i < 3; i++) {
-            const d = new Date(fri);
-            d.setDate(fri.getDate() + i);
-            const iso = d.toISOString().slice(0, 10);
-            if (this.dateShowCounts[iso]) {
-              this._selectedSet.add(iso);
-            }
-          }
-          this.selectedDates = [...this._selectedSet].sort();
-          localStorage.setItem('micf_selected_dates', JSON.stringify(this.selectedDates));
-        },
-
-        selectThisWeek() {
-          // Mon through Sun of current week
-          const today = new Date();
-          const dow = today.getDay();
-          const daysToMon = dow === 0 ? -6 : 1 - dow;
-          const mon = new Date(today);
-          mon.setDate(today.getDate() + daysToMon);
-
-          for (let i = 0; i < 7; i++) {
-            const d = new Date(mon);
-            d.setDate(mon.getDate() + i);
-            const iso = d.toISOString().slice(0, 10);
-            if (this.dateShowCounts[iso]) {
-              this._selectedSet.add(iso);
-            }
-          }
-          this.selectedDates = [...this._selectedSet].sort();
-          localStorage.setItem('micf_selected_dates', JSON.stringify(this.selectedDates));
-        },
-
-        // ---- Columns ----
-        get visibleColumns() {
-          return this.allColumnDefs.filter(c => {
-            if (c.key === 'Distance' && !this.userLat) return false;
-            return this.colVisible[c.key];
-          });
-        },
-
-        isSortable(col) {
-          return col.filter !== 'none' || sortableNoneKeys.has(col.key);
-        },
-
-        colStyle(col) {
-          return 'width:' + this.colWidths[col.key] + 'px; min-width:' + col.minWidth + 'px; max-width:' + this.colWidths[col.key] + 'px;';
-        },
-
-        tableStyle() {
-          const total = this.visibleColumns.reduce((s, c) => s + this.colWidths[c.key], 0);
-          return 'min-width:' + total + 'px; table-layout: fixed;';
-        },
-
-        toggleColumn(key) {
-          this.colVisible[key] = !this.colVisible[key];
-          localStorage.setItem('micf_columns', JSON.stringify(this.colVisible));
-        },
-
-        resetColumns() {
-          this.colVisible = { ...defaultVisible };
-          localStorage.setItem('micf_columns', JSON.stringify(this.colVisible));
-        },
-
-        isPlainCol(key) {
-          return plainKeys.has(key);
-        },
-
-        cellClass(col, show) {
-          if (col.key === 'Dates') return 'text-slate-500 font-mono text-[10px]';
-          if (col.key === 'VenueName') return 'text-slate-500';
-          if (col.key === 'Region') return 'text-slate-400';
-          if (col.key === 'Suburb' && show.Suburb === this.userSuburb && this.userSuburb) return 'text-orange-600 font-bold';
-          return '';
-        },
-
-        // ---- Filtering ----
-        get filteredShows() {
-          const hasDateFilter = this.selectedDates.length > 0;
-          const dateSet = this._selectedSet;
-          const q = (this.searchQuery || '').toLowerCase().trim();
-
-          // Pre-collect active column filters to avoid iterating all 19 columns per show
-          const activeFilters = [];
-          for (const col of this.allColumnDefs) {
-            const f = this.filters[col.key];
-            if (!f) continue;
-            activeFilters.push({ key: col.key, type: col.filter, value: f, valueLower: f.toLowerCase() });
-          }
-          const hasColFilters = activeFilters.length > 0;
-
-          return this.allShows.filter(show => {
-            // Global search: use precomputed _haystack
-            if (q && !show._haystack.includes(q)) return false;
-
-            // Date filter: use precomputed _dates array
-            if (hasDateFilter) {
-              if (!show._dates.some(d => dateSet.has(d))) return false;
-            }
-
-            // Column filters (only iterate active ones)
-            if (hasColFilters) {
-              for (const af of activeFilters) {
-                if (af.type === 'text') {
-                  const val = (show[af.key] || '').toString().toLowerCase();
-                  if (!val.includes(af.valueLower)) return false;
-                } else if (af.type === 'select') {
-                  if (show[af.key] !== af.value) return false;
-                } else if (af.type === 'bool') {
-                  if (af.value === 'yes' && !show[af.key]) return false;
-                  if (af.value === 'no' && show[af.key]) return false;
-                }
-              }
-            }
-            return true;
-          });
-        },
-
-        get activePills() {
-          const pills = [];
-          for (const col of this.allColumnDefs) {
-            const f = this.filters[col.key];
-            if (f) pills.push({ key: col.key, label: col.label, value: f });
-          }
-          return pills;
-        },
-
-        clearPill(pill) {
-          this.filters[pill.key] = '';
-        },
-
-        // ---- Sorting ----
-        sort(key) {
-          if (this.sortKey === key) this.sortAsc = !this.sortAsc;
-          else { this.sortKey = key; this.sortAsc = true; }
-          this.allShows.sort((a, b) => {
-            let v1 = a[key], v2 = b[key];
-            if (key === 'Distance') { v1 = this.distanceKm(a); v2 = this.distanceKm(b); }
-            if (typeof v1 === 'boolean') { v1 = v1 ? 1 : 0; v2 = v2 ? 1 : 0; }
-            if (typeof v1 === 'string') { v1 = v1.toLowerCase(); v2 = (v2 || '').toLowerCase(); }
-            if (v1 == null) v1 = '';
-            if (v2 == null) v2 = '';
-            if (this.sortAsc) return v1 > v2 ? 1 : v1 < v2 ? -1 : 0;
-            return v1 < v2 ? 1 : v1 > v2 ? -1 : 0;
-          });
-        },
-
-        // ---- Resize ----
-        startResize(e, key) {
-          this.resizing = { key, startX: e.clientX, startW: this.colWidths[key] };
-          const col = this.allColumnDefs.find(c => c.key === key);
-          const onMove = (ev) => {
-            if (!this.resizing) return;
-            const diff = ev.clientX - this.resizing.startX;
-            this.colWidths[this.resizing.key] = Math.max(col.minWidth, this.resizing.startW + diff);
-          };
-          const onUp = () => {
-            this.resizing = null;
-            localStorage.setItem('micf_col_widths', JSON.stringify(this.colWidths));
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-          };
-          document.addEventListener('mousemove', onMove);
-          document.addEventListener('mouseup', onUp);
-        },
-
-        // ---- Row expand ----
-        async toggleExpand(showID, idx) {
-          this.activeRow = idx;
-          if (this.expandedRow === showID) { this.expandedRow = null; return; }
-          this.expandedRow = showID;
-          if (!this.sessionCache[showID]) {
-            try {
-              const resp = await fetch('/api/sessions?show_id=' + showID);
-              this.sessionCache[showID] = await resp.json();
-            } catch(e) { this.sessionCache[showID] = []; }
-          }
-        },
-
-        // ---- Keyboard ----
-        handleKeydown(e) {
-          // "/" to focus search from anywhere
-          if (e.key === '/' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
-            e.preventDefault();
-            this.$refs.searchInput.focus();
-            return;
-          }
-          if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-          const shows = this.filteredShows;
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            this.activeRow = Math.min(this.activeRow + 1, shows.length - 1);
-            this.scrollToActive();
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            this.activeRow = Math.max(this.activeRow - 1, 0);
-            this.scrollToActive();
-          } else if (e.key === 'Enter' && this.activeRow >= 0) {
-            e.preventDefault();
-            const show = shows[this.activeRow];
-            if (show) this.toggleExpand(show.ID, this.activeRow);
-          } else if (e.key === 'Escape') {
-            this.expandedRow = null;
-            this.showCalendar = false;
-            this.showColChooser = false;
-            this.showExport = false;
-          }
-        },
-
-        scrollToActive() {
-          this.$nextTick(() => {
-            const row = this.$refs.gridScroll?.querySelectorAll('.data-row')[this.activeRow];
-            if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-          });
-        },
-
-        // ---- Density ----
-        toggleDensity() {
-          this.density = this.density === 'compact' ? 'comfortable' : 'compact';
-          localStorage.setItem('micf_density', this.density);
-        },
-
-        // ---- Location ----
-        async requestLocation() {
-          if (!navigator.geolocation) return;
-          navigator.geolocation.getCurrentPosition(async (pos) => {
-            this.userLat = pos.coords.latitude;
-            this.userLng = pos.coords.longitude;
-            localStorage.setItem('micf_user_lat', this.userLat);
-            localStorage.setItem('micf_user_lng', this.userLng);
-            try {
-              const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude);
-              const data = await res.json();
-              this.userSuburb = data.address.suburb || data.address.town || '';
-              localStorage.setItem('micf_user_suburb', this.userSuburb);
-            } catch(e) {}
-          });
-        },
-
-        toggleUnits() {
-          this.useImperial = !this.useImperial;
-          localStorage.setItem('micf_use_imperial', this.useImperial);
-        },
-
-        haversine(lat1, lon1, lat2, lon2) {
-          const R = 6371;
-          const dLat = (lat2 - lat1) * Math.PI / 180;
-          const dLon = (lon2 - lon1) * Math.PI / 180;
-          const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-          return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        },
-
-        distanceKm(show) {
-          if (!this.userLat || !show.Lat) return 9999;
-          return this.haversine(this.userLat, this.userLng, show.Lat, show.Lng);
-        },
-
-        distanceDisplay(show) {
-          if (!this.userLat || !show.Lat) return '-';
-          const km = this.distanceKm(show);
-          return this.useImperial ? (km * 0.621371).toFixed(1) + ' mi' : km.toFixed(1) + ' km';
-        },
-
-        directionsUrl(show) {
-          if (show.Lat && show.Lng) return 'https://www.google.com/maps/dir/?api=1&destination=' + show.Lat + ',' + show.Lng;
-          return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(show.Venue + ', Melbourne, Victoria');
-        }
-      };
-    }
+    window.__DATA__ = {
+      shows: {{.Shows}},
+      totalShows: {{.TotalShows}},
+      search: "{{.Search}}",
+      suburbs: {{.Suburbs}},
+      regions: {{.Regions}}
+    };
   </script>
+  <script src="/static/app.js"></script>
 </body>
 </html>
