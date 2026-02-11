@@ -54,6 +54,7 @@ type Show struct {
 	URL           string   `json:"url"`
 	Venues        []string `json:"venues"`
 	VenueSummary  string
+	VenueID       int
 	Dates         string `json:"dates"`
 	ShowCount     string `json:"showCount"`
 	ImageURL      string `json:"imageUrl"`
@@ -91,6 +92,52 @@ type VenueStats struct {
 	Total, Geocoded, Skipped, Failed int
 }
 
+// BuildVenueLookup queries all venues and returns a name→id map
+func BuildVenueLookup() map[string]int {
+	lookup := make(map[string]int)
+	rows, err := db.Query("SELECT id, name FROM venues")
+	if err != nil {
+		log.Printf("BuildVenueLookup error: %v", err)
+		return lookup
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err == nil {
+			lookup[name] = id
+		}
+	}
+	return lookup
+}
+
+// ResolveVenueID attempts to match a venue_summary string to a venue ID
+func ResolveVenueID(venueSummary string, lookup map[string]int) int {
+	if venueSummary == "" {
+		return 0
+	}
+	// 1. Exact match on full string
+	if id, ok := lookup[venueSummary]; ok {
+		return id
+	}
+	// 2. Take first comma-separated entry (multi-venue shows)
+	first := venueSummary
+	if idx := strings.Index(venueSummary, ","); idx != -1 {
+		first = strings.TrimSpace(venueSummary[:idx])
+	}
+	if id, ok := lookup[first]; ok {
+		return id
+	}
+	// 3. Strip " - RoomName" suffix and try again
+	if dashIdx := strings.Index(first, " - "); dashIdx != -1 {
+		base := strings.TrimSpace(first[:dashIdx])
+		if id, ok := lookup[base]; ok {
+			return id
+		}
+	}
+	return 0
+}
+
 // ScrapeAll orchestrates the full sync
 func ScrapeAll(numWorkers int, forceGeocode bool) {
 	start := time.Now()
@@ -113,6 +160,10 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 	}
 	total := len(shows)
 	fmt.Printf("✅ Found %d shows. Firing up %d workers...\n", total, numWorkers)
+
+	// Wait for venues to finish so we can build the lookup for venue_id resolution
+	venueWg.Wait()
+	venueLookup := BuildVenueLookup()
 
 	// Snapshot existing data for change detection
 	existing := GetExistingShowData()
@@ -139,6 +190,7 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 					log.Printf("Skipping %q: %v", show.Title, err)
 				} else {
 					show.VenueSummary = strings.Join(show.Venues, ", ")
+					show.VenueID = ResolveVenueID(show.VenueSummary, venueLookup)
 					SaveShow(show, sessions)
 					scrapedIDs[show.ID] = true
 
@@ -178,7 +230,8 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 	stats.Removed = RemoveStaleShows(staleIDs)
 	stats.Total = stats.New + stats.Updated + stats.Unchanged + stats.Failed
 
-	venueWg.Wait() // Ensure geocoding finishes before we declare done
+	// Invalidate page cache so next request gets fresh data
+	InvalidatePageCache()
 
 	fmt.Printf("\n\n🏁 Scrape completed in %v\n", time.Since(start).Round(time.Second))
 	fmt.Printf("📊 Shows: %d total — %d new, %d updated, %d unchanged, %d removed, %d failed\n",

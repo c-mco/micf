@@ -102,8 +102,13 @@ func InitDB() {
 	db.Exec("ALTER TABLE sessions ADD COLUMN is_filmed BOOLEAN")
 	db.Exec("ALTER TABLE sessions ADD COLUMN is_relaxed BOOLEAN")
 
+	// Shows: venue_id for fast join
+	db.Exec("ALTER TABLE shows ADD COLUMN venue_id INTEGER")
+
 	// 4. Indexes for performance
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_sessions_date_showid ON sessions(date, show_id)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_shows_venue_id ON shows(venue_id)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_sessions_show_id ON sessions(show_id)")
 
 	// 5. Optimization: Enable WAL mode
 	// This allows the scraper to write while you read the UI on your Mac Mini
@@ -205,8 +210,8 @@ func SaveShow(show Show, sessions []Session) {
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`INSERT OR REPLACE INTO shows (id, title, artist, url, venue_summary, dates, show_count, image_url, small_image_url, online_show, on_demand_show, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		show.ID, show.Title, show.Artist, show.URL, show.VenueSummary, show.Dates, show.ShowCount, show.ImageURL, show.SmallImageURL, show.OnlineShow, show.OnDemandShow, show.Status)
+	_, err = tx.Exec(`INSERT OR REPLACE INTO shows (id, title, artist, url, venue_summary, dates, show_count, image_url, small_image_url, online_show, on_demand_show, status, venue_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		show.ID, show.Title, show.Artist, show.URL, show.VenueSummary, show.Dates, show.ShowCount, show.ImageURL, show.SmallImageURL, show.OnlineShow, show.OnDemandShow, show.Status, show.VenueID)
 	if err != nil {
 		log.Printf("Error saving show %s: %v", show.Title, err)
 		return
@@ -230,6 +235,61 @@ func SaveShow(show Show, sessions []Session) {
 
 	if err := tx.Commit(); err != nil {
 		log.Printf("Error committing show %s: %v", show.Title, err)
+	}
+}
+
+// BackfillVenueIDs resolves venue_id for existing shows that have venue_summary but no venue_id
+func BackfillVenueIDs() {
+	lookup := BuildVenueLookup()
+	if len(lookup) == 0 {
+		return
+	}
+
+	rows, err := db.Query("SELECT id, venue_summary FROM shows WHERE venue_id IS NULL OR venue_id = 0")
+	if err != nil {
+		log.Printf("BackfillVenueIDs query error: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	type pending struct {
+		id      int
+		summary string
+	}
+	var updates []pending
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.id, &p.summary); err == nil && p.summary != "" {
+			updates = append(updates, p)
+		}
+	}
+
+	if len(updates) == 0 {
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		log.Printf("BackfillVenueIDs tx error: %v", err)
+		return
+	}
+	defer tx.Rollback()
+
+	count := 0
+	for _, u := range updates {
+		vid := ResolveVenueID(u.summary, lookup)
+		if vid != 0 {
+			tx.Exec("UPDATE shows SET venue_id = ? WHERE id = ?", vid, u.id)
+			count++
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("BackfillVenueIDs commit error: %v", err)
+		return
+	}
+	if count > 0 {
+		log.Printf("Backfilled venue_id for %d shows", count)
 	}
 }
 
