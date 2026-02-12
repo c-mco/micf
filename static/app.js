@@ -22,7 +22,8 @@ var COLUMNS = [
   { key: 'HasRelaxed',         label: 'Relaxed',       width: 65,  minWidth: 50,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Accessibility' },
   { key: 'AdultsOnly',         label: '18+',           width: 50,  minWidth: 40,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Show Info' },
   { key: 'OnlineShow',         label: 'Online',        width: 60,  minWidth: 45,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Show Info' },
-  { key: 'Status',             label: 'Status',        width: 80,  minWidth: 50,  filter: 'text',   align: 'left',   visible: false, locked: false, group: 'Show Info' },
+  { key: 'Duration',            label: 'Duration',      width: 70,  minWidth: 45,  filter: 'none',   align: 'right',  visible: false, locked: false, group: 'Show Info' },
+  { key: 'Status',             label: 'Status',        width: 80,  minWidth: 50,  filter: 'select', align: 'left',   visible: false, locked: false, group: 'Show Info' },
   { key: 'DisabledToilets',    label: 'Accessible WC', width: 90,  minWidth: 50,  filter: 'bool',   align: 'center', visible: false, locked: false, group: 'Accessibility' },
 ];
 
@@ -32,7 +33,7 @@ var COLUMN_GROUPS = ['Show Info', 'Venue', 'Sessions', 'Accessibility'];
 var PLAIN_KEYS = { Artist: 1, Dates: 1, VenueName: 1, Suburb: 1, Region: 1 };
 
 // Columns with filter:none that are still sortable
-var SORTABLE_NONE = { Count: 1, Distance: 1, Capacity: 1, SoldOutCount: 1 };
+var SORTABLE_NONE = { Count: 1, Distance: 1, Capacity: 1, SoldOutCount: 1, Duration: 1 };
 
 // --- Virtual Scroll ---
 
@@ -76,7 +77,7 @@ var state = {
   _selectedSet: null,
   dateShowCounts: {},
   calendarMonths: [],
-  filterOptions: { Suburb: [], Region: [] },
+  filterOptions: { Suburb: [], Region: [], Status: [] },
   // Dropdown visibility
   calendarOpen: false,
   colChooserOpen: false,
@@ -131,6 +132,72 @@ function getRowHeight() {
   return ROW_HEIGHT[state.density] || 28;
 }
 
+// --- Filter Dropdown Portal ---
+
+var portalState = { open: false, key: null, el: null };
+
+function createPortal() {
+  var el = document.createElement('div');
+  el.className = 'filter-dropdown-portal';
+  el.innerHTML = '<input class="fdd-search" placeholder="Search...">' +
+    '<div class="fdd-list"></div>';
+  document.body.appendChild(el);
+  portalState.el = el;
+
+  el.querySelector('.fdd-search').addEventListener('input', function() {
+    var q = this.value.toLowerCase();
+    el.querySelectorAll('.fdd-option').forEach(function(opt) {
+      opt.style.display = opt.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+    });
+  });
+
+  el.querySelector('.fdd-search').addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { closePortal(); e.stopPropagation(); }
+  });
+
+  el.querySelector('.fdd-list').addEventListener('click', function(e) {
+    var opt = e.target.closest('.fdd-option');
+    if (!opt) return;
+    state.filters[portalState.key] = opt.dataset.value;
+    closePortal();
+    renderFilters();
+    requestFilter(false);
+  });
+
+  el.addEventListener('click', function(e) { e.stopPropagation(); });
+}
+
+function openPortal(key, triggerEl) {
+  if (!portalState.el) createPortal();
+  var portal = portalState.el;
+  var rect = triggerEl.getBoundingClientRect();
+
+  portal.style.top = rect.bottom + 'px';
+  portal.style.left = rect.left + 'px';
+  portal.style.minWidth = Math.max(rect.width, 140) + 'px';
+
+  var options = state.filterOptions[key] || [];
+  var currentVal = state.filters[key] || '';
+  var html = '<div class="fdd-option' + (!currentVal ? ' active' : '') + '" data-value="">All</div>';
+  options.forEach(function(opt) {
+    html += '<div class="fdd-option' + (opt === currentVal ? ' active' : '') + '" data-value="' + escapeHTML(opt) + '">' + escapeHTML(opt) + '</div>';
+  });
+  portal.querySelector('.fdd-list').innerHTML = html;
+
+  var search = portal.querySelector('.fdd-search');
+  search.value = '';
+  portalState.open = true;
+  portalState.key = key;
+  portal.classList.add('open');
+  setTimeout(function() { search.focus(); }, 0);
+}
+
+function closePortal() {
+  if (portalState.el) portalState.el.classList.remove('open');
+  portalState.open = false;
+  portalState.key = null;
+}
+
 // --- Initialization ---
 
 function init() {
@@ -141,6 +208,7 @@ function init() {
   state.searchQuery = data.search || '';
   state.filterOptions.Suburb = (data.suburbs || []).sort();
   state.filterOptions.Region = (data.regions || []).sort();
+  state.filterOptions.Status = (data.statuses || []).sort();
 
   // Load preferences
   state.density = lsGetRaw(LS.density, 'compact');
@@ -294,6 +362,34 @@ function bindEvents() {
     }
   });
 
+  // Select filter clicks (portal dropdown)
+  dom.filterRow.addEventListener('click', function(e) {
+    var selectEl = e.target.closest('.filter-select');
+    if (selectEl) {
+      var key = selectEl.dataset.key;
+      if (e.target.classList.contains('filter-select-clear')) {
+        state.filters[key] = '';
+        renderFilters();
+        requestFilter(false);
+        return;
+      }
+      if (portalState.open && portalState.key === key) {
+        closePortal();
+      } else {
+        openPortal(key, selectEl);
+      }
+      return;
+    }
+    // Calendar button in dates filter
+    var calBtn = e.target.closest('.filter-date-btn');
+    if (calBtn) {
+      state.calendarOpen = !state.calendarOpen;
+      state.colChooserOpen = false;
+      state.exportOpen = false;
+      updateDropdowns();
+    }
+  });
+
   // Table body clicks (row expand)
   dom.tbody.addEventListener('click', function(e) {
     if (e.target.closest('a')) return; // Don't intercept links
@@ -311,6 +407,9 @@ function bindEvents() {
   document.addEventListener('click', function(e) {
     if (!e.target.closest('.dropdown-wrap')) {
       closeAllDropdowns();
+    }
+    if (portalState.open && !e.target.closest('.filter-dropdown-portal') && !e.target.closest('.filter-select')) {
+      closePortal();
     }
   });
 
@@ -440,16 +539,22 @@ function renderFilters() {
   dom.filterRow.innerHTML = cols.map(function(col) {
     var inner = '';
     if (col.filter === 'text') {
-      inner = '<input type="text" class="filter-input" placeholder="Filter..." data-key="' + col.key + '" value="' + escapeHTML(state.filters[col.key] || '') + '">';
+      if (col.key === 'Dates') {
+        inner = '<div class="filter-date-wrap">' +
+          '<input type="text" class="filter-input" placeholder="Filter..." data-key="' + col.key + '" value="' + escapeHTML(state.filters[col.key] || '') + '">' +
+          '<button class="filter-date-btn" title="Open calendar">&#x25BE;</button>' +
+          '</div>';
+      } else {
+        inner = '<input type="text" class="filter-input" placeholder="Filter..." data-key="' + col.key + '" value="' + escapeHTML(state.filters[col.key] || '') + '">';
+      }
     } else if (col.filter === 'select') {
-      var opts = (state.filterOptions[col.key] || []);
       var val = state.filters[col.key] || '';
-      inner = '<select class="filter-input" data-key="' + col.key + '">' +
-        '<option value="">All</option>' +
-        opts.map(function(o) {
-          return '<option value="' + escapeHTML(o) + '"' + (o === val ? ' selected' : '') + '>' + escapeHTML(o) + '</option>';
-        }).join('') +
-        '</select>';
+      var label = val || 'All';
+      inner = '<div class="filter-select" data-key="' + col.key + '">' +
+        '<span class="filter-select-label">' + escapeHTML(label) + '</span>' +
+        (val ? '<span class="filter-select-clear">&times;</span>' : '') +
+        '<span class="filter-select-arrow">&#x25BE;</span>' +
+        '</div>';
     } else if (col.filter === 'bool') {
       var val = state.filters[col.key] || '';
       inner = '<select class="filter-input" data-key="' + col.key + '">' +
@@ -547,6 +652,9 @@ function renderCell(col, show) {
   if (key === 'Capacity') {
     return '<span class="cell-muted">' + (show.Capacity || '-') + '</span>';
   }
+  if (key === 'Duration') {
+    return show.Duration ? '<span class="cell-muted">' + show.Duration + ' min</span>' : '';
+  }
   if (key === 'Status') {
     return '<span class="cell-muted">' + escapeHTML(show.Status || '-') + '</span>';
   }
@@ -566,12 +674,21 @@ function renderDetailRow(show, colCount) {
   var sessions = state.sessionCache[show.ID];
   var sessionsHTML = sessions ? renderSessionTable(sessions) : '<div class="detail-loading">Loading sessions...</div>';
 
-  var img = show.SmallImageURL
-    ? '<img src="' + escapeHTML(show.SmallImageURL) + '" class="detail-thumb" alt="">'
+  var imgSrc = show.LargeImageURL || show.ImageURL || show.SmallImageURL;
+  var img = imgSrc
+    ? '<img src="' + escapeHTML(imgSrc) + '" class="detail-thumb" alt="">'
     : '';
 
   var mapsLink = (show.Lat && show.Lng)
     ? '<a href="' + directionsUrl(show) + '" target="_blank" class="maps-link">Maps</a>'
+    : '';
+
+  var durationBadge = show.Duration
+    ? '<span class="badge badge-slate">' + show.Duration + ' min</span>'
+    : '';
+
+  var descHTML = show.Description
+    ? '<div class="detail-description">' + show.Description + '</div>'
     : '';
 
   return '<tr class="detail-row"><td colspan="' + colCount + '">' +
@@ -582,10 +699,12 @@ function renderDetailRow(show, colCount) {
     '<span class="detail-title">' + escapeHTML(show.Title) + '</span>' +
     '<span class="detail-artist">' + escapeHTML(show.Artist) + '</span>' +
     '<span class="detail-venue">' + escapeHTML(show.VenueName) + '</span>' +
+    durationBadge +
     '<div class="detail-links">' +
     '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank">MICF Page</a>' +
     mapsLink +
     '</div></div>' +
+    descHTML +
     '<div id="sessions-' + show.ID + '" class="detail-sessions">' + sessionsHTML + '</div>' +
     (show.AccessibilityDetails ? '<div class="detail-accessibility">' + show.AccessibilityDetails + '</div>' : '') +
     '</div></div></div></td></tr>';
@@ -966,6 +1085,7 @@ function handleKeydown(e) {
     var show = shows[state.activeRow];
     if (show) toggleExpand(show.ID, state.activeRow);
   } else if (e.key === 'Escape') {
+    if (portalState.open) { closePortal(); return; }
     state.expandedRow = null;
     closeAllDropdowns();
     renderBody();

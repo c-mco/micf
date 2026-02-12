@@ -119,6 +119,9 @@ type ShowView struct {
 	SoldOutCount         int     `json:"SoldOutCount"`
 	DisabledToilets      bool    `json:"DisabledToilets"`
 	SessionDates         string  `json:"SessionDates"`
+	Description          string  `json:"Description"`
+	Duration             int     `json:"Duration"`
+	LargeImageURL        string  `json:"LargeImageURL"`
 }
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +184,10 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			COALESCE(SUM(CASE WHEN sess.is_sold_out THEN 1 ELSE 0 END), 0)    AS sold_out_count,
 			COALESCE(v.name, '')                                               AS venue_name,
 			COALESCE(v.disabled_toilets, 0)                                    AS disabled_toilets,
-			COALESCE(GROUP_CONCAT(DISTINCT sess.date), '')                     AS session_dates
+			COALESCE(GROUP_CONCAT(DISTINCT sess.date), '')                     AS session_dates,
+			COALESCE(s.description, '')                                        AS description,
+			COALESCE(s.duration, 0)                                            AS duration,
+			COALESCE(s.large_image_url, '')                                    AS large_image_url
 		FROM shows s
 		LEFT JOIN sessions sess ON s.id = sess.show_id
 		LEFT JOIN venues v ON s.venue_id = v.id
@@ -199,6 +205,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	var results []ShowView
 	suburbs := map[string]bool{}
 	regions := map[string]bool{}
+	statuses := map[string]bool{}
 
 	for rows.Next() {
 		var sv ShowView
@@ -213,6 +220,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			&assistedHearing, &adultsOnly, &sv.VenueWebsite, &sv.AccessibilityDetails,
 			&hasSignInterpreter, &hasRelaxed, &hasTightArse, &sv.SoldOutCount,
 			&sv.VenueName, &disabledToilets, &sv.SessionDates,
+			&sv.Description, &sv.Duration, &sv.LargeImageURL,
 		)
 		if err != nil {
 			log.Printf("Scan error: %v", err)
@@ -235,6 +243,9 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		if sv.Region != "" {
 			regions[sv.Region] = true
 		}
+		if sv.Status != "" {
+			statuses[sv.Status] = true
+		}
 
 		results = append(results, sv)
 	}
@@ -247,6 +258,10 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	for r := range regions {
 		regionList = append(regionList, r)
 	}
+	statusList := make([]string, 0, len(statuses))
+	for s := range statuses {
+		statusList = append(statusList, s)
+	}
 
 	var totalShows int
 	db.QueryRow("SELECT COUNT(*) FROM shows").Scan(&totalShows)
@@ -254,12 +269,14 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	showsJSON, _ := json.Marshal(results)
 	suburbsJSON, _ := json.Marshal(suburbList)
 	regionsJSON, _ := json.Marshal(regionList)
+	statusesJSON, _ := json.Marshal(statusList)
 
 	data := map[string]interface{}{
 		"Shows":      template.JS(showsJSON),
 		"Search":     search,
 		"Suburbs":    template.JS(suburbsJSON),
 		"Regions":    template.JS(regionsJSON),
+		"Statuses":   template.JS(statusesJSON),
 		"TotalShows": totalShows,
 	}
 

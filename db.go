@@ -105,6 +105,14 @@ func InitDB() {
 	// Shows: venue_id for fast join
 	db.Exec("ALTER TABLE shows ADD COLUMN venue_id INTEGER")
 
+	// Shows: detail page data
+	db.Exec("ALTER TABLE shows ADD COLUMN large_image_url TEXT")
+	db.Exec("ALTER TABLE shows ADD COLUMN description TEXT")
+	db.Exec("ALTER TABLE shows ADD COLUMN duration INTEGER")
+	db.Exec("ALTER TABLE shows ADD COLUMN content_warnings TEXT")
+	db.Exec("ALTER TABLE shows ADD COLUMN price_range TEXT")
+	db.Exec("ALTER TABLE shows ADD COLUMN tags TEXT")
+
 	// 4. Indexes for performance
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_sessions_date_showid ON sessions(date, show_id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_shows_venue_id ON shows(venue_id)")
@@ -210,8 +218,8 @@ func SaveShow(show Show, sessions []Session) {
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`INSERT OR REPLACE INTO shows (id, title, artist, url, venue_summary, dates, show_count, image_url, small_image_url, online_show, on_demand_show, status, venue_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		show.ID, show.Title, show.Artist, show.URL, show.VenueSummary, show.Dates, show.ShowCount, show.ImageURL, show.SmallImageURL, show.OnlineShow, show.OnDemandShow, show.Status, show.VenueID)
+	_, err = tx.Exec(`INSERT OR REPLACE INTO shows (id, title, artist, url, venue_summary, dates, show_count, image_url, small_image_url, online_show, on_demand_show, status, venue_id, large_image_url, description, duration, content_warnings, price_range, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		show.ID, show.Title, show.Artist, show.URL, show.VenueSummary, show.Dates, show.ShowCount, show.ImageURL, show.SmallImageURL, show.OnlineShow, show.OnDemandShow, show.Status, show.VenueID, show.LargeImageURL, show.Description, show.Duration, show.ContentWarnings, show.PriceRange, show.Tags)
 	if err != nil {
 		log.Printf("Error saving show %s: %v", show.Title, err)
 		return
