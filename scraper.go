@@ -54,13 +54,21 @@ type Show struct {
 	URL           string   `json:"url"`
 	Venues        []string `json:"venues"`
 	VenueSummary  string
+	VenueID       int
 	Dates         string `json:"dates"`
 	ShowCount     string `json:"showCount"`
 	ImageURL      string `json:"imageUrl"`
 	SmallImageURL string `json:"smallImageUrl"`
+	LargeImageURL string `json:"largeImageUrl"`
 	OnlineShow    bool   `json:"onlineShow"`
 	OnDemandShow  bool   `json:"onDemandShow"`
 	Status        string `json:"status"`
+	// Fields populated from detail page scraping
+	Description     string `json:"-"`
+	Duration        int    `json:"-"`
+	ContentWarnings string `json:"-"`
+	PriceRange      string `json:"-"`
+	Tags            string `json:"-"`
 }
 
 type Session struct {
@@ -91,11 +99,60 @@ type VenueStats struct {
 	Total, Geocoded, Skipped, Failed int
 }
 
-// ScrapeAll orchestrates the full sync
+// BuildVenueLookup queries all venues and returns a name→id map
+func BuildVenueLookup() map[string]int {
+	lookup := make(map[string]int)
+	rows, err := db.Query("SELECT id, name FROM venues")
+	if err != nil {
+		log.Printf("BuildVenueLookup error: %v", err)
+		return lookup
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err == nil {
+			lookup[name] = id
+		}
+	}
+	return lookup
+}
+
+// ResolveVenueID attempts to match a venue_summary string to a venue ID
+func ResolveVenueID(venueSummary string, lookup map[string]int) int {
+	if venueSummary == "" {
+		return 0
+	}
+	// 1. Exact match on full string
+	if id, ok := lookup[venueSummary]; ok {
+		return id
+	}
+	// 2. Take first comma-separated entry (multi-venue shows)
+	first := venueSummary
+	if before, _, ok := strings.Cut(venueSummary, ","); ok {
+		first = strings.TrimSpace(before)
+	}
+	if id, ok := lookup[first]; ok {
+		return id
+	}
+	// 3. Strip " - RoomName" suffix and try again
+	if before, _, ok := strings.Cut(first, " - "); ok {
+		base := strings.TrimSpace(before)
+		if id, ok := lookup[base]; ok {
+			return id
+		}
+	}
+	return 0
+}
+
+// ScrapeAll orchestrates the full sync in 3 decoupled phases:
+// Phase 1: Fetch master list + start venue sync in parallel
+// Phase 2: Scrape show details immediately (don't wait for venues)
+// Phase 3: After both finish, resolve venue IDs and save to DB
 func ScrapeAll(numWorkers int, forceGeocode bool) {
 	start := time.Now()
 
-	// 1. Kick off venue sync + geocoding in the background
+	// Phase 1: Kick off venue sync + fetch master list in parallel
 	var venueWg sync.WaitGroup
 	var venueStats VenueStats
 	venueWg.Add(1)
@@ -104,7 +161,6 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 		venueStats = FetchAndSaveVenues(forceGeocode)
 	}()
 
-	// 2. Fetch the master show list (runs immediately, no waiting on venues)
 	fmt.Println("🛰️  Fetching master show list from MICF...")
 	shows, err := fetchMasterList()
 	if err != nil {
@@ -114,52 +170,42 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 	total := len(shows)
 	fmt.Printf("✅ Found %d shows. Firing up %d workers...\n", total, numWorkers)
 
-	// Snapshot existing data for change detection
-	existing := GetExistingShowData()
+	// Phase 2: Scrape show details immediately (no waiting on venues)
+	type scrapeResult struct {
+		show     Show
+		sessions []Session
+	}
+	results := make([]scrapeResult, 0, total)
+	var resultsMu sync.Mutex
+	processed := 0
+	failed := 0
 
 	jobs := make(chan Show, total)
 	var wg sync.WaitGroup
-	processed := 0
-	var mu sync.Mutex
-	stats := ScrapeStats{}
-	scrapedIDs := make(map[int]bool)
 
-	re := regexp.MustCompile(`(?s)window\.sessionData\s*=\s*(\[.*?\]);`)
+	sessionRe := regexp.MustCompile(`(?s)window\.sessionData\s*=\s*(\[.*?\]);`)
+	durationRe := regexp.MustCompile(`window\.sessionDuration\s*=\s*'(\d+)'`)
 
 	for w := 1; w <= numWorkers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for show := range jobs {
-				sessions, err := scrapeShowDetails(show, re)
+				sessions, err := scrapeShowDetails(&show, sessionRe, durationRe)
 
-				mu.Lock()
+				resultsMu.Lock()
 				if err != nil {
-					stats.Failed++
+					failed++
 					log.Printf("Skipping %q: %v", show.Title, err)
 				} else {
-					show.VenueSummary = strings.Join(show.Venues, ", ")
-					SaveShow(show, sessions)
-					scrapedIDs[show.ID] = true
-
-					if snap, exists := existing[show.ID]; !exists {
-						stats.New++
-					} else if snap.Title != show.Title || snap.Artist != show.Artist ||
-						snap.URL != show.URL || snap.VenueSummary != show.VenueSummary ||
-						snap.SessionCount != len(sessions) {
-						stats.Updated++
-					} else {
-						stats.Unchanged++
-					}
+					results = append(results, scrapeResult{show, sessions})
 				}
 				processed++
 				fmt.Printf("\r🚀 Progress: [%d/%d] shows scraped (%.1f%%)...",
 					processed, total, float64(processed)/float64(total)*100)
-				mu.Unlock()
+				resultsMu.Unlock()
 
 				time.Sleep(time.Duration(100+rand.Intn(200)) * time.Millisecond)
 			}
-		}()
+		})
 	}
 
 	for _, s := range shows {
@@ -167,6 +213,31 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 	}
 	close(jobs)
 	wg.Wait()
+
+	// Phase 3: Wait for venues, resolve IDs, and save
+	venueWg.Wait()
+	venueLookup := BuildVenueLookup()
+	existing := GetExistingShowData()
+
+	stats := ScrapeStats{Failed: failed}
+	scrapedIDs := make(map[int]bool)
+
+	for _, r := range results {
+		r.show.VenueSummary = strings.Join(r.show.Venues, ", ")
+		r.show.VenueID = ResolveVenueID(r.show.VenueSummary, venueLookup)
+		SaveShow(r.show, r.sessions)
+		scrapedIDs[r.show.ID] = true
+
+		if snap, exists := existing[r.show.ID]; !exists {
+			stats.New++
+		} else if snap.Title != r.show.Title || snap.Artist != r.show.Artist ||
+			snap.URL != r.show.URL || snap.VenueSummary != r.show.VenueSummary ||
+			snap.SessionCount != len(r.sessions) {
+			stats.Updated++
+		} else {
+			stats.Unchanged++
+		}
+	}
 
 	// Remove shows that no longer exist in the festival
 	var staleIDs []int
@@ -178,7 +249,8 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 	stats.Removed = RemoveStaleShows(staleIDs)
 	stats.Total = stats.New + stats.Updated + stats.Unchanged + stats.Failed
 
-	venueWg.Wait() // Ensure geocoding finishes before we declare done
+	// Invalidate page cache so next request gets fresh data
+	InvalidatePageCache()
 
 	fmt.Printf("\n\n🏁 Scrape completed in %v\n", time.Since(start).Round(time.Second))
 	fmt.Printf("📊 Shows: %d total — %d new, %d updated, %d unchanged, %d removed, %d failed\n",
@@ -195,6 +267,7 @@ func FetchAndSaveVenues(forceGeocode bool) VenueStats {
 		fmt.Printf("❌ Venue API Error: %v\n", err)
 		return stats
 	}
+
 	defer resp.Body.Close()
 
 	var data struct {
@@ -292,7 +365,7 @@ func fetchMasterList() ([]Show, error) {
 	return data.Items, nil
 }
 
-func scrapeShowDetails(show Show, re *regexp.Regexp) ([]Session, error) {
+func scrapeShowDetails(show *Show, sessionRe, durationRe *regexp.Regexp) ([]Session, error) {
 	fullURL := "https://www.comedyfestival.com.au" + show.URL
 	resp, err := httpClient.Get(fullURL)
 	if err != nil {
@@ -305,7 +378,7 @@ func scrapeShowDetails(show Show, re *regexp.Regexp) ([]Session, error) {
 		return nil, err
 	}
 
-	match := re.FindSubmatch(body)
+	match := sessionRe.FindSubmatch(body)
 	if len(match) < 2 {
 		return nil, fmt.Errorf("no data")
 	}
@@ -314,5 +387,43 @@ func scrapeShowDetails(show Show, re *regexp.Regexp) ([]Session, error) {
 	if err := json.Unmarshal(match[1], &sessions); err != nil {
 		return nil, err
 	}
+
+	bodyStr := string(body)
+
+	// Duration from window.sessionDuration
+	if dm := durationRe.FindStringSubmatch(bodyStr); len(dm) >= 2 {
+		show.Duration, _ = strconv.Atoi(dm[1])
+	}
+
+	// Description from <section class="rte">
+	if idx := strings.Index(bodyStr, `<section class="rte">`); idx >= 0 {
+		rest := bodyStr[idx+len(`<section class="rte">`):]
+		if end := strings.Index(rest, "</section>"); end >= 0 {
+			show.Description = strings.TrimSpace(rest[:end])
+		}
+	}
+
+	// Tags from <li class="show-page__tag">
+	tagRe := regexp.MustCompile(`<li[^>]*class="show-page__tag[^"]*"[^>]*>([^<]+)</li>`)
+	if tagMatches := tagRe.FindAllStringSubmatch(bodyStr, -1); len(tagMatches) > 0 {
+		var tags []string
+		for _, m := range tagMatches {
+			tags = append(tags, strings.TrimSpace(m[1]))
+		}
+		show.Tags = strings.Join(tags, ", ")
+	}
+
+	// Price range (e.g. "$28 - $31")
+	priceRe := regexp.MustCompile(`\$(\d+(?:\.\d{2})?)\s*[-–]\s*\$(\d+(?:\.\d{2})?)`)
+	if pm := priceRe.FindString(bodyStr); pm != "" {
+		show.PriceRange = pm
+	}
+
+	// Content warnings
+	cwRe := regexp.MustCompile(`(?i)content\s+warning[s]?\s*:?\s*([^<]+)`)
+	if cm := cwRe.FindStringSubmatch(bodyStr); len(cm) >= 2 {
+		show.ContentWarnings = strings.TrimSpace(cm[1])
+	}
+
 	return sessions, nil
 }
