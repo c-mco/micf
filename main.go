@@ -71,7 +71,12 @@ func main() {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Header().Set("Service-Worker-Allowed", "/")
 		data, _ := staticFS.ReadFile("static/sw.js")
-		w.Write(data)
+		_, err := w.Write(data)
+		if err != nil {
+			log.Printf("Query error: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 
 	http.HandleFunc("/", handleIndex)
@@ -139,9 +144,19 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "public, max-age=300")
 			if gz != nil && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 				w.Header().Set("Content-Encoding", "gzip")
-				w.Write(gz)
+				_, err := w.Write(gz)
+				if err != nil {
+					log.Printf("Query error: %v", err)
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
 			} else {
-				w.Write(raw)
+				_, err := w.Write(raw)
+				if err != nil {
+					log.Printf("Query error: %v", err)
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
 			}
 			return
 		}
@@ -271,7 +286,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	regionsJSON, _ := json.Marshal(regionList)
 	statusesJSON, _ := json.Marshal(statusList)
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"Shows":      template.JS(showsJSON),
 		"Search":     search,
 		"Suburbs":    template.JS(suburbsJSON),

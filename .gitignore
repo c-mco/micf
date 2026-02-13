@@ -6,6 +6,8 @@ micf.db
 micf.db-shm
 micf.db-wal
 
+# logs
+**.log
 # Air hot reload
 tmp/
 

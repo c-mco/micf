@@ -155,11 +155,9 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 	// Phase 1: Kick off venue sync + fetch master list in parallel
 	var venueWg sync.WaitGroup
 	var venueStats VenueStats
-	venueWg.Add(1)
-	go func() {
-		defer venueWg.Done()
+	venueWg.Go(func() {
 		venueStats = FetchAndSaveVenues(forceGeocode)
-	}()
+	})
 
 	fmt.Println("🛰️  Fetching master show list from MICF...")
 	shows, err := fetchMasterList()
@@ -396,10 +394,10 @@ func scrapeShowDetails(show *Show, sessionRe, durationRe *regexp.Regexp) ([]Sess
 	}
 
 	// Description from <section class="rte">
-	if idx := strings.Index(bodyStr, `<section class="rte">`); idx >= 0 {
-		rest := bodyStr[idx+len(`<section class="rte">`):]
-		if end := strings.Index(rest, "</section>"); end >= 0 {
-			show.Description = strings.TrimSpace(rest[:end])
+	if _, after, ok := strings.Cut(bodyStr, `<section class="rte">`); ok {
+		rest := after
+		if before, _, ok0 := strings.Cut(rest, "</section>"); ok0 {
+			show.Description = strings.TrimSpace(before)
 		}
 	}
 
