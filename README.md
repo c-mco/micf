@@ -91,9 +91,40 @@ go build -o micf .
 
 ### Run the web server
 
+**Option 1: Direct run**
 ```bash
 ./micf
 # http://localhost:8080
+```
+
+**Option 2: LaunchAgent (runs on login, auto-restarts)**
+```bash
+# Load the service
+launchctl load ~/Library/LaunchAgents/com.micf.server.plist
+
+# Start/restart the service
+launchctl kickstart -k gui/$(id -u)/com.micf.server
+
+# View status
+launchctl list | grep micf
+
+# View logs
+tail -f server.log error.log
+```
+
+### Rebuild and restart
+
+After making code changes:
+
+```bash
+# Rebuild the binary
+go build -o micf .
+
+# Restart the LaunchAgent service
+launchctl kickstart -k gui/$(id -u)/com.micf.server
+
+# Or if running directly, just kill and restart
+pkill micf && ./micf
 ```
 
 ### Development (hot reload)
@@ -119,12 +150,42 @@ air
 
 ## Deployment
 
-Run on a home server:
+### LaunchAgents (macOS - Recommended)
 
-1. Cron: `0 */6 * * * ./micf -scrape` to keep data fresh
+Two LaunchAgents keep everything running:
+
+**1. Web Server** (`com.micf.server.plist`)
+- Runs on login
+- Auto-restarts if it crashes
+- Logs to `server.log` and `error.log`
+
+**2. Scraper** (`com.micf.scraper.plist`)
+- Runs every 6 hours (00:00, 06:00, 12:00, 18:00)
+- Logs to `logs/scrape.log` and `logs/scrape-error.log`
+
+```bash
+# Load services
+launchctl load ~/Library/LaunchAgents/com.micf.server.plist
+launchctl load ~/Library/LaunchAgents/com.micf.scraper.plist
+
+# Check status
+launchctl list | grep micf
+
+# View scraper logs
+tail -f logs/scrape.log
+
+# Manually trigger a scrape
+launchctl kickstart gui/$(id -u)/com.micf.scraper
+```
+
+### Alternative: Cron + Background Process
+
+If not using LaunchAgents:
+
+1. Cron: `0 */6 * * * cd /Users/cam/micf && ./micf -scrape >> logs/scrape.log 2>&1`
 2. Service: `./micf` as a background process on `:8080`
 
-Only two files needed: the binary and `micf.db`.
+Only two files needed in production: the binary and `micf.db`.
 
 ## License
 

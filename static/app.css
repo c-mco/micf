@@ -205,6 +205,33 @@ input, select { font-family: inherit; }
 .cal-day.selected.density-low,
 .cal-day.selected.density-med,
 .cal-day.selected.density-high { background: var(--primary); }
+.cal-day.excluded {
+  background: repeating-linear-gradient(
+    45deg,
+    #fee2e2,
+    #fee2e2 3px,
+    #fecaca 3px,
+    #fecaca 6px
+  );
+  color: #991b1b;
+  font-weight: 600;
+}
+.cal-day.excluded:hover {
+  background: repeating-linear-gradient(
+    45deg,
+    #fecaca,
+    #fecaca 3px,
+    #fca5a5 3px,
+    #fca5a5 6px
+  );
+}
+.cal-help {
+  font-size: 10px;
+  color: var(--text-light);
+  text-align: center;
+  padding: 4px 0 6px;
+  border-top: 1px solid var(--border);
+}
 .cal-actions {
   border-top: 1px solid var(--border);
   padding: 6px 10px;
@@ -437,6 +464,12 @@ th.sortable:hover .sort-indicator { opacity: 0.4; }
   transition: background 0.1s;
 }
 .filter-pill:hover { background: #bfdbfe; }
+.filter-pill.pill-exclude {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+.filter-pill.pill-exclude:hover { background: #fecaca; }
 .pill-x { font-weight: 700; font-size: 12px; }
 .footer-hint {
   margin-left: auto;

@@ -47,6 +47,7 @@ var LS = {
   widths:   'micf_col_widths',
   density:  'micf_density',
   dates:    'micf_selected_dates',
+  excludedDates: 'micf_excluded_dates',
   lat:      'micf_user_lat',
   lng:      'micf_user_lng',
   suburb:   'micf_user_suburb',
@@ -75,6 +76,8 @@ var state = {
   filters: {},
   selectedDates: [],
   _selectedSet: null,
+  excludedDates: [],
+  _excludedSet: null,
   dateShowCounts: {},
   calendarMonths: [],
   filterOptions: { Suburb: [], Region: [], Status: [] },
@@ -218,6 +221,8 @@ function init() {
   state.useImperial = localStorage.getItem(LS.imperial) === 'true';
   state.selectedDates = lsGet(LS.dates, []);
   state._selectedSet = new Set(state.selectedDates);
+  state.excludedDates = lsGet(LS.excludedDates, []);
+  state._excludedSet = new Set(state.excludedDates);
 
   // Column visibility
   var defaultVis = {};
@@ -480,7 +485,8 @@ function bindEvents() {
   $('#calendar-panel').addEventListener('click', function(e) {
     var dayEl = e.target.closest('.cal-day.has-shows');
     if (dayEl) {
-      toggleDate(dayEl.dataset.iso);
+      var isExclude = e.ctrlKey || e.metaKey;
+      toggleDate(dayEl.dataset.iso, isExclude);
       return;
     }
     var btn = e.target.closest('[data-action]');
@@ -770,11 +776,19 @@ function renderFooter(filteredCount) {
       ' <span class="pill-x">\u00d7</span></span>';
   }
 
-  // Date pill
+  // Date include pill
   if (state.selectedDates.length > 0) {
     var n = state.selectedDates.length;
-    pills += '<span class="filter-pill" data-pill-key="__dates">' +
-      n + ' date' + (n > 1 ? 's' : '') + ' selected' +
+    pills += '<span class="filter-pill" data-pill-key="__dates_include">' +
+      n + ' date' + (n > 1 ? 's' : '') + ' included' +
+      ' <span class="pill-x">\u00d7</span></span>';
+  }
+
+  // Date exclude pill
+  if (state.excludedDates.length > 0) {
+    var n = state.excludedDates.length;
+    pills += '<span class="filter-pill pill-exclude" data-pill-key="__dates_exclude">' +
+      n + ' date' + (n > 1 ? 's' : '') + ' excluded' +
       ' <span class="pill-x">\u00d7</span></span>';
   }
 
@@ -788,9 +802,20 @@ function renderFooter(filteredCount) {
         state.searchQuery = '';
         dom.search.value = '';
         updateSearchClear();
-      } else if (key === '__dates') {
-        clearDates();
-        return; // clearDates already calls requestFilter
+      } else if (key === '__dates_include') {
+        state._selectedSet.clear();
+        state.selectedDates = [];
+        lsSet(LS.dates, state.selectedDates);
+        refreshCalendarSelection();
+        requestFilter(true);
+        return;
+      } else if (key === '__dates_exclude') {
+        state._excludedSet.clear();
+        state.excludedDates = [];
+        lsSet(LS.excludedDates, state.excludedDates);
+        refreshCalendarSelection();
+        requestFilter(true);
+        return;
       } else {
         state.filters[key] = '';
         var input = dom.filterRow.querySelector('[data-key="' + key + '"]');
@@ -861,10 +886,15 @@ function buildCalendar(data) {
       var iso = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
       var count = counts[iso] || 0;
       var selected = state._selectedSet.has(iso);
+      var excluded = state._excludedSet.has(iso);
       var cls = 'cal-day';
       if (count > 0) {
         cls += ' has-shows';
-        if (!selected) {
+        if (selected) {
+          cls += ' selected';
+        } else if (excluded) {
+          cls += ' excluded';
+        } else {
           if (count <= q1) cls += ' density-low';
           else if (count <= q2) cls += ' density-med';
           else cls += ' density-high';
@@ -872,7 +902,6 @@ function buildCalendar(data) {
       } else {
         cls += ' no-shows';
       }
-      if (selected) cls += ' selected';
       if (iso === todayISO) cls += ' today';
 
       daysHTML += '<div class="' + cls + '" data-iso="' + iso + '">' +
@@ -894,11 +923,12 @@ function buildCalendar(data) {
     cursor = new Date(year, month + 1, 1);
   }
 
-  var clearBtn = state.selectedDates.length > 0
+  var clearBtn = (state.selectedDates.length > 0 || state.excludedDates.length > 0)
     ? '<button class="clear-action" data-action="clear">Clear all</button>'
     : '';
 
   $('#calendar-content').innerHTML = months.join('') +
+    '<div class="cal-help">Click to include \u2022 Ctrl/Cmd+click to exclude</div>' +
     '<div class="cal-actions">' +
     '<button class="quick-action" data-action="weekend">This weekend</button>' +
     '<button class="quick-action" data-action="week">This week</button>' +
@@ -916,13 +946,18 @@ function refreshCalendarSelection() {
     if (!iso) return;
     if (state._selectedSet.has(iso)) {
       el.classList.add('selected');
+      el.classList.remove('excluded');
+    } else if (state._excludedSet.has(iso)) {
+      el.classList.add('excluded');
+      el.classList.remove('selected');
     } else {
       el.classList.remove('selected');
+      el.classList.remove('excluded');
     }
   });
   // Update clear button visibility
   var clearBtn = $('#calendar-panel [data-action="clear"]');
-  if (clearBtn) clearBtn.style.display = state.selectedDates.length > 0 ? '' : 'none';
+  if (clearBtn) clearBtn.style.display = (state.selectedDates.length > 0 || state.excludedDates.length > 0) ? '' : 'none';
   updateDateBtn();
 }
 
@@ -957,7 +992,14 @@ function getFilteredShows() {
     // Global search
     if (q && show._haystack.indexOf(q) === -1) return false;
 
-    // Date filter
+    // Check EXCLUDE first (fails faster)
+    if (state.excludedDates.length > 0) {
+      for (var i = 0; i < show._dates.length; i++) {
+        if (state._excludedSet.has(show._dates[i])) return false;
+      }
+    }
+
+    // Then check INCLUDE (if specified)
     if (hasDateFilter) {
       var match = false;
       for (var i = 0; i < show._dates.length; i++) {
@@ -1129,14 +1171,32 @@ function startResize(e, key) {
 
 // --- Date Selection ---
 
-function toggleDate(iso) {
-  if (state._selectedSet.has(iso)) {
-    state._selectedSet.delete(iso);
+function toggleDate(iso, isExclude) {
+  if (isExclude) {
+    // Exclude mode: toggle in exclude set, ensure not in include set
+    if (state._excludedSet.has(iso)) {
+      state._excludedSet.delete(iso);
+    } else {
+      state._excludedSet.add(iso);
+      state._selectedSet.delete(iso); // Remove from include if present
+    }
+    state.excludedDates = Array.from(state._excludedSet).sort();
+    state.selectedDates = Array.from(state._selectedSet).sort();
+    lsSet(LS.excludedDates, state.excludedDates);
+    lsSet(LS.dates, state.selectedDates);
   } else {
-    state._selectedSet.add(iso);
+    // Include mode: toggle in include set, ensure not in exclude set
+    if (state._selectedSet.has(iso)) {
+      state._selectedSet.delete(iso);
+    } else {
+      state._selectedSet.add(iso);
+      state._excludedSet.delete(iso); // Remove from exclude if present
+    }
+    state.selectedDates = Array.from(state._selectedSet).sort();
+    state.excludedDates = Array.from(state._excludedSet).sort();
+    lsSet(LS.dates, state.selectedDates);
+    lsSet(LS.excludedDates, state.excludedDates);
   }
-  state.selectedDates = Array.from(state._selectedSet).sort();
-  lsSet(LS.dates, state.selectedDates);
   refreshCalendarSelection();
   requestFilter(false);
 }
@@ -1144,7 +1204,10 @@ function toggleDate(iso) {
 function clearDates() {
   state._selectedSet.clear();
   state.selectedDates = [];
+  state._excludedSet.clear();
+  state.excludedDates = [];
   lsSet(LS.dates, state.selectedDates);
+  lsSet(LS.excludedDates, state.excludedDates);
   refreshCalendarSelection();
   requestFilter(true);
 }
@@ -1159,10 +1222,15 @@ function selectThisWeekend() {
     var d = new Date(fri);
     d.setDate(fri.getDate() + i);
     var iso = d.toISOString().slice(0, 10);
-    if (state.dateShowCounts[iso]) state._selectedSet.add(iso);
+    if (state.dateShowCounts[iso]) {
+      state._selectedSet.add(iso);
+      state._excludedSet.delete(iso); // Remove from exclude if present
+    }
   }
   state.selectedDates = Array.from(state._selectedSet).sort();
+  state.excludedDates = Array.from(state._excludedSet).sort();
   lsSet(LS.dates, state.selectedDates);
+  lsSet(LS.excludedDates, state.excludedDates);
   refreshCalendarSelection();
   requestFilter(false);
 }
@@ -1177,10 +1245,15 @@ function selectThisWeek() {
     var d = new Date(mon);
     d.setDate(mon.getDate() + i);
     var iso = d.toISOString().slice(0, 10);
-    if (state.dateShowCounts[iso]) state._selectedSet.add(iso);
+    if (state.dateShowCounts[iso]) {
+      state._selectedSet.add(iso);
+      state._excludedSet.delete(iso); // Remove from exclude if present
+    }
   }
   state.selectedDates = Array.from(state._selectedSet).sort();
+  state.excludedDates = Array.from(state._excludedSet).sort();
   lsSet(LS.dates, state.selectedDates);
+  lsSet(LS.excludedDates, state.excludedDates);
   refreshCalendarSelection();
   requestFilter(false);
 }
@@ -1367,6 +1440,7 @@ function requestFilter(resetScroll) {
       sortAsc: state.sortAsc,
       searchQuery: state.searchQuery,
       selectedDates: state.selectedDates,
+      excludedDates: state.excludedDates,
       filters: state.filters,
       userLat: state.userLat,
       userLng: state.userLng,

@@ -43,9 +43,13 @@ function filterAndSort(params) {
   // Filter
   var q = (params.searchQuery || '').toLowerCase().trim();
   var selectedDates = params.selectedDates || [];
+  var excludedDates = params.excludedDates || [];
   var hasDateFilter = selectedDates.length > 0;
+  var hasExcludeFilter = excludedDates.length > 0;
   var dateSet = {};
+  var excludeSet = {};
   for (var i = 0; i < selectedDates.length; i++) dateSet[selectedDates[i]] = true;
+  for (var i = 0; i < excludedDates.length; i++) excludeSet[excludedDates[i]] = true;
 
   // Pre-collect active column filters
   var activeFilters = [];
@@ -64,7 +68,16 @@ function filterAndSort(params) {
     // Global search
     if (q && show._haystack.indexOf(q) === -1) continue;
 
-    // Date filter
+    // Check EXCLUDE first (fails faster)
+    if (hasExcludeFilter) {
+      var isExcluded = false;
+      for (var d = 0; d < show._dates.length; d++) {
+        if (excludeSet[show._dates[d]]) { isExcluded = true; break; }
+      }
+      if (isExcluded) continue;
+    }
+
+    // Then check INCLUDE (if specified)
     if (hasDateFilter) {
       var dateMatch = false;
       for (var d = 0; d < show._dates.length; d++) {
