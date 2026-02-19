@@ -101,6 +101,7 @@ func main() {
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/api/sessions", handleSessions)
 	http.HandleFunc("/api/dates", handleDates)
+	http.HandleFunc("/api/sessions-by-date", handleSessionsByDate)
 	http.HandleFunc("/export/json", handleExportJSON)
 	http.HandleFunc("/export/csv", handleExportCSV)
 	http.HandleFunc("/export/excel", handleExportExcel)

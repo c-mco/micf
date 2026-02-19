@@ -23,6 +23,21 @@
 
     <div class="spacer"></div>
 
+    <!-- Free filter -->
+    <button id="free-filter-btn" class="toolbar-btn">Free</button>
+
+    <!-- Price filter -->
+    <div class="dropdown-wrap">
+      <button id="price-btn" class="toolbar-btn">Price</button>
+      <div id="price-panel" class="dropdown-panel price-panel">
+        <div class="dropdown-header"><span>Price Range</span><button id="price-reset" class="price-reset-btn">Reset</button></div>
+        <div class="price-inputs">
+          <label>Min $<input type="number" id="price-min-input" class="price-input" min="0" placeholder="0"></label>
+          <label>Max $<input type="number" id="price-max-input" class="price-input" min="0" placeholder="any"></label>
+        </div>
+      </div>
+    </div>
+
     <!-- Location -->
     <button id="location-btn" class="toolbar-btn">Enable Location</button>
     <button id="unit-btn" class="unit-btn hidden">km</button>
@@ -71,6 +86,9 @@
       </div>
     </div>
 
+    <!-- Day Planner -->
+    <button id="planner-btn" class="toolbar-btn">Planner</button>
+
     <!-- Density -->
     <button id="density-btn" class="toolbar-btn">Comfortable</button>
   </header>
@@ -94,6 +112,22 @@
     <div id="footer-pills" class="footer-pills"></div>
     <span class="footer-hint">Press <kbd>/</kbd> to search</span>
   </footer>
+
+  <!-- Day Planner panel -->
+  <div id="planner-panel" class="planner-panel">
+    <div class="planner-header">
+      <span class="planner-title">Day Plan</span>
+      <select id="planner-date-select" class="planner-date-select"></select>
+      <button id="planner-close" class="planner-close">&times;</button>
+    </div>
+    <div id="planner-timeline" class="planner-timeline"></div>
+    <div class="planner-footer">
+      <span id="planner-summary" class="planner-summary"></span>
+      <button id="planner-clear" class="planner-clear-btn">Clear</button>
+    </div>
+  </div>
+
+  <!-- Planner open button (in header, added via JS) -->
 
   <!-- Embedded show data from server -->
   <script>

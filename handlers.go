@@ -15,6 +15,7 @@ type ShowView struct {
 	ID                   int     `json:"ID"`
 	Title                string  `json:"Title"`
 	Artist               string  `json:"Artist"`
+	SortingTitle         string  `json:"SortingTitle"`
 	URL                  string  `json:"URL"`
 	Venue                string  `json:"Venue"`
 	VenueName            string  `json:"VenueName"`
@@ -47,6 +48,8 @@ type ShowView struct {
 	MinPrice             float64 `json:"MinPrice"`
 	MaxPrice             float64 `json:"MaxPrice"`
 	IsFree               bool    `json:"IsFree"`
+	MinAvailPct          int     `json:"MinAvailPct"`
+	VideoEmbedURL        string  `json:"VideoEmbedURL"`
 }
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +128,11 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			COALESCE(s.large_image_url, '')                                    AS large_image_url,
 			COALESCE(MIN(CASE WHEN sess.min_price > 0 THEN sess.min_price ELSE NULL END), 0) AS min_price,
 			COALESCE(MAX(sess.max_price), 0)                                   AS max_price,
-			COALESCE(MAX(sess.is_free_show), 0)                                AS is_free
+			COALESCE(MAX(sess.is_free_show), 0)                                AS is_free,
+		COALESCE(MIN(CASE WHEN sess.availability_percentage > 0 AND NOT sess.is_sold_out
+		             THEN sess.availability_percentage ELSE NULL END), 0)  AS min_avail_pct,
+		COALESCE(s.sorting_title, s.artist, '')                            AS sorting_title,
+		COALESCE(s.video_embed_url, '')                                    AS video_embed_url
 		FROM shows s
 		LEFT JOIN sessions sess ON s.id = sess.show_id
 		LEFT JOIN venues v ON s.venue_id = v.id
@@ -161,6 +168,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			&sv.VenueName, &disabledToilets, &sv.SessionDates,
 			&sv.Description, &sv.Duration, &sv.LargeImageURL,
 			&sv.MinPrice, &sv.MaxPrice, &isFree,
+			&sv.MinAvailPct, &sv.SortingTitle, &sv.VideoEmbedURL,
 		)
 		if err != nil {
 			log.Printf("Scan error: %v", err)
@@ -343,6 +351,85 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	json.NewEncoder(w).Encode(sessions)
+}
+
+// PlannerSession is the data returned by /api/sessions-by-date.
+type PlannerSession struct {
+	ShowID      int     `json:"showId"`
+	Title       string  `json:"title"`
+	Artist      string  `json:"artist"`
+	VenueName   string  `json:"venueName"`
+	Lat         float64 `json:"lat"`
+	Lng         float64 `json:"lng"`
+	Duration    int     `json:"duration"`
+	URL         string  `json:"url"`
+	SmallImage  string  `json:"smallImage"`
+	SessionID   int     `json:"sessionId"`
+	Time        string  `json:"time"`
+	FullDate    string  `json:"fullDate"`
+	MinPrice    float64 `json:"minPrice"`
+	MaxPrice    float64 `json:"maxPrice"`
+	IsFreeShow  bool    `json:"isFreeShow"`
+	IsSoldOut   bool    `json:"isSoldOut"`
+	IsTightArse bool    `json:"isTightArse"`
+	Cancelled   bool    `json:"cancelled"`
+	AvailPct    int     `json:"availPct"`
+}
+
+func handleSessionsByDate(w http.ResponseWriter, r *http.Request) {
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		http.Error(w, "date required", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := db.Query(`
+		SELECT s.id, s.title, s.artist, s.url, COALESCE(s.small_image_url, ''),
+		       COALESCE(s.duration, 60),
+		       COALESCE(v.name, ''), COALESCE(v.latitude, 0), COALESCE(v.longitude, 0),
+		       COALESCE(sess.session_id, 0), COALESCE(sess.time, ''), COALESCE(sess.full_date, ''),
+		       COALESCE(sess.min_price, 0), COALESCE(sess.max_price, 0),
+		       COALESCE(sess.is_free_show, 0), COALESCE(sess.is_sold_out, 0),
+		       COALESCE(sess.is_tight_arse, 0), COALESCE(sess.cancelled, 0),
+		       COALESCE(sess.availability_percentage, 0)
+		FROM shows s
+		JOIN sessions sess ON s.id = sess.show_id
+		LEFT JOIN venues v ON s.venue_id = v.id
+		WHERE sess.date = ? AND COALESCE(sess.cancelled, 0) = 0
+		ORDER BY sess.full_date ASC`, date)
+	if err != nil {
+		log.Printf("sessions-by-date query error: %v", err)
+		http.Error(w, "Query failed", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var results []PlannerSession
+	for rows.Next() {
+		var ps PlannerSession
+		var isFree, isSoldOut, isTightArse, cancelled int
+		err := rows.Scan(
+			&ps.ShowID, &ps.Title, &ps.Artist, &ps.URL, &ps.SmallImage,
+			&ps.Duration,
+			&ps.VenueName, &ps.Lat, &ps.Lng,
+			&ps.SessionID, &ps.Time, &ps.FullDate,
+			&ps.MinPrice, &ps.MaxPrice,
+			&isFree, &isSoldOut, &isTightArse, &cancelled,
+			&ps.AvailPct,
+		)
+		if err != nil {
+			log.Printf("sessions-by-date scan error: %v", err)
+			continue
+		}
+		ps.IsFreeShow = isFree == 1
+		ps.IsSoldOut = isSoldOut == 1
+		ps.IsTightArse = isTightArse == 1
+		ps.Cancelled = cancelled == 1
+		results = append(results, ps)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
 }
 
 func handleDates(w http.ResponseWriter, r *http.Request) {

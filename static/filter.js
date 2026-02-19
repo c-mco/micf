@@ -29,6 +29,10 @@ function filterShows(shows, params) {
   var hasDateFilter = selectedDates.length > 0;
   var hasExcludeFilter = excludedDates.length > 0;
   var filterTypes = params.filterTypes || {};
+  var showFreeOnly = params.showFreeOnly || false;
+  var priceMin = params.priceMin || 0;
+  var priceMax = params.priceMax || 0;
+  var planDate = params.planDate || '';
 
   // Build lookup objects for dates
   var dateSet = {};
@@ -89,6 +93,18 @@ function filterShows(shows, params) {
       if (skip) continue;
     }
 
+    // Free only filter
+    if (showFreeOnly && !show.IsFree) continue;
+
+    // Price range filter (free shows always pass)
+    if (!show.IsFree) {
+      if (priceMin > 0 && show.MaxPrice < priceMin) continue;
+      if (priceMax > 0 && show.MinPrice > priceMax) continue;
+    }
+
+    // Planner date filter
+    if (planDate && show._dateSet && !show._dateSet[planDate]) continue;
+
     result.push(show);
   }
 
@@ -97,17 +113,29 @@ function filterShows(shows, params) {
 
 // --- Sorting ---
 
+function stripArticle(s) {
+  return (s || '').replace(/^(a |an |the )/i, '');
+}
+
 function sortShows(shows, key, asc, userLat, userLng) {
   shows.sort(function(a, b) {
-    var v1 = a[key], v2 = b[key];
+    var v1, v2;
     if (key === 'Distance') {
       v1 = distanceKm(a, userLat, userLng);
       v2 = distanceKm(b, userLat, userLng);
+    } else if (key === 'Title') {
+      v1 = stripArticle(a.Title).toLowerCase();
+      v2 = stripArticle(b.Title).toLowerCase();
+    } else if (key === 'Artist') {
+      v1 = (a.SortingTitle || a.Artist || '').toLowerCase();
+      v2 = (b.SortingTitle || b.Artist || '').toLowerCase();
+    } else {
+      v1 = a[key]; v2 = b[key];
+      if (typeof v1 === 'boolean') { v1 = v1 ? 1 : 0; v2 = v2 ? 1 : 0; }
+      if (typeof v1 === 'string') { v1 = v1.toLowerCase(); v2 = (v2 || '').toLowerCase(); }
+      if (v1 == null) v1 = '';
+      if (v2 == null) v2 = '';
     }
-    if (typeof v1 === 'boolean') { v1 = v1 ? 1 : 0; v2 = v2 ? 1 : 0; }
-    if (typeof v1 === 'string') { v1 = v1.toLowerCase(); v2 = (v2 || '').toLowerCase(); }
-    if (v1 == null) v1 = '';
-    if (v2 == null) v2 = '';
     if (asc) return v1 > v2 ? 1 : v1 < v2 ? -1 : 0;
     return v1 < v2 ? 1 : v1 > v2 ? -1 : 0;
   });

@@ -28,6 +28,10 @@ self.onmessage = function(e) {
       excludedDates: msg.excludedDates,
       filters: msg.filters,
       filterTypes: workerFilterTypes,
+      showFreeOnly: msg.showFreeOnly,
+      priceMin: msg.priceMin,
+      priceMax: msg.priceMax,
+      planDate: msg.planDate,
     });
     self.postMessage({ type: 'result', shows: result, seq: msg.seq });
     return;

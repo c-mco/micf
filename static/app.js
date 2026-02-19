@@ -30,6 +30,11 @@ function init() {
   state._selectedSet = new Set(state.selectedDates);
   state.excludedDates = lsGet(LS.excludedDates, []);
   state._excludedSet = new Set(state.excludedDates);
+  state.showFreeOnly = lsGet(LS.freeOnly, false);
+  state.priceMin = lsGet(LS.priceMin, 0) || 0;
+  state.priceMax = lsGet(LS.priceMax, 0) || 0;
+  state.plan = lsGet(LS.plan, []);
+  state.planDate = lsGetRaw(LS.planDate, '');
 
   // Column visibility
   var defaultVis = {};
@@ -90,6 +95,22 @@ function init() {
   updateLocationBtn();
   updateDensityBtn();
   updateDateBtn();
+
+  // Restore Free filter button state
+  if (state.showFreeOnly) {
+    var freeBtn = $('#free-filter-btn');
+    if (freeBtn) freeBtn.classList.add('active');
+  }
+
+  // Restore price inputs
+  if (state.priceMin) {
+    var pmin = $('#price-min-input');
+    if (pmin) pmin.value = state.priceMin;
+  }
+  if (state.priceMax) {
+    var pmax = $('#price-max-input');
+    if (pmax) pmax.value = state.priceMax;
+  }
 
   // Bind events
   bindEvents();

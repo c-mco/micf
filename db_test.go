@@ -22,6 +22,8 @@ func setupTestDB(t *testing.T) {
 		`CREATE TABLE IF NOT EXISTS shows (id INTEGER PRIMARY KEY, title TEXT, artist TEXT, url TEXT, venue_summary TEXT)`,
 		`CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, show_id INTEGER, date TEXT, time TEXT, full_date TEXT, is_tight_arse BOOLEAN, is_sold_out BOOLEAN, cancelled BOOLEAN, FOREIGN KEY(show_id) REFERENCES shows(id))`,
 		`CREATE TABLE IF NOT EXISTS venues (id INTEGER PRIMARY KEY, name TEXT, address TEXT, suburb TEXT, location TEXT, capacity INTEGER, wheelchair_access BOOLEAN, disabled_toilets BOOLEAN, website TEXT)`,
+		`CREATE TABLE IF NOT EXISTS session_history (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER, show_id INTEGER, scraped_at TEXT, availability_percentage INTEGER, availability_level TEXT, is_sold_out BOOLEAN, min_price REAL, max_price REAL, status TEXT)`,
+		`CREATE TABLE IF NOT EXISTS show_history (id INTEGER PRIMARY KEY AUTOINCREMENT, show_id INTEGER, scraped_at TEXT, status TEXT, availability_level TEXT)`,
 	}
 	for _, s := range schemas {
 		if _, err := db.Exec(s); err != nil {

@@ -3,12 +3,13 @@
 // ============================================================
 
 import { COLUMNS } from './columns.js';
-import { state, dom, LS, lsSet, getRowHeight } from './state.js';
+import { state, dom, LS, lsSet, lsGet, getRowHeight } from './state.js';
 import { $, $$, debounce, escapeHTML, toggleClass } from './utils.js';
 import { isSortable } from './columns.js';
 import { renderAll, renderBody, renderColgroup, renderHeader, renderFilters, renderColumnChooser, renderSessionTable, updateSearchClear, updateSortIndicators } from './render.js';
 import { requestFilter } from './worker-bridge.js';
 import { toggleDate, clearDates, selectThisWeekend, selectThisWeek } from './calendar.js';
+import { openPlanner, closePlanner, setPlanDate, renderPlanner, addToPlan, removeFromPlan } from './planner.js';
 
 // --- Filter Dropdown Portal ---
 
@@ -82,6 +83,7 @@ function closeAllDropdowns() {
   state.calendarOpen = false;
   state.colChooserOpen = false;
   state.exportOpen = false;
+  state.priceOpen = false;
   updateDropdowns();
 }
 
@@ -89,6 +91,7 @@ function updateDropdowns() {
   toggleClass('#calendar-panel', 'open', state.calendarOpen);
   toggleClass('#colchooser-panel', 'open', state.colChooserOpen);
   toggleClass('#export-panel', 'open', state.exportOpen);
+  toggleClass('#price-panel', 'open', state.priceOpen);
 }
 
 // --- Location ---
@@ -444,6 +447,84 @@ export function bindEvents() {
       renderBody();
     });
   }, { passive: true });
+
+  // Free filter button
+  $('#free-filter-btn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    state.showFreeOnly = !state.showFreeOnly;
+    lsSet(LS.freeOnly, state.showFreeOnly);
+    this.classList.toggle('active', state.showFreeOnly);
+    requestFilter(true);
+  });
+
+  // Price filter button
+  $('#price-btn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    state.priceOpen = !state.priceOpen;
+    state.calendarOpen = false;
+    state.colChooserOpen = false;
+    state.exportOpen = false;
+    updateDropdowns();
+  });
+
+  // Price inputs
+  var priceDebounce = debounce(function() {
+    var minVal = parseFloat($('#price-min-input').value) || 0;
+    var maxVal = parseFloat($('#price-max-input').value) || 0;
+    state.priceMin = minVal;
+    state.priceMax = maxVal;
+    lsSet(LS.priceMin, minVal);
+    lsSet(LS.priceMax, maxVal);
+    requestFilter(true);
+  }, 300);
+  $('#price-min-input').addEventListener('input', priceDebounce);
+  $('#price-max-input').addEventListener('input', priceDebounce);
+
+  // Price reset
+  $('#price-reset').addEventListener('click', function() {
+    state.priceMin = 0;
+    state.priceMax = 0;
+    lsSet(LS.priceMin, 0);
+    lsSet(LS.priceMax, 0);
+    $('#price-min-input').value = '';
+    $('#price-max-input').value = '';
+    requestFilter(true);
+  });
+
+  // Planner button
+  $('#planner-btn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (state.plannerOpen) { closePlanner(); } else { openPlanner(); }
+  });
+
+  // Planner close button
+  $('#planner-close').addEventListener('click', closePlanner);
+
+  // Planner date select
+  $('#planner-date-select').addEventListener('change', function() {
+    setPlanDate(this.value);
+  });
+
+  // Planner clear
+  $('#planner-clear').addEventListener('click', function() {
+    state.plan = [];
+    lsSet(LS.plan, []);
+    renderPlanner();
+    requestFilter(false);
+  });
+
+  // Planner row buttons (plan add/remove — event delegation on tbody)
+  dom.tbody.addEventListener('click', function(e) {
+    var btn = e.target.closest('.plan-row-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    var showId = parseInt(btn.dataset.showId);
+    if (btn.classList.contains('planned')) {
+      removeFromPlan(showId);
+    } else if (btn.classList.contains('add')) {
+      addToPlan(showId);
+    }
+  });
 
   // Calendar panel event delegation
   $('#calendar-panel').addEventListener('click', function(e) {

@@ -53,6 +53,10 @@ export function requestFilter(resetScroll) {
       filters: state.filters,
       userLat: state.userLat,
       userLng: state.userLng,
+      showFreeOnly: state.showFreeOnly,
+      priceMin: state.priceMin,
+      priceMax: state.priceMax,
+      planDate: state.plannerOpen ? state.planDate : '',
     });
   } else {
     syncFilterSort();
@@ -123,6 +127,13 @@ function syncFilterSort() {
         }
       }
     }
+
+    if (state.showFreeOnly && !show.IsFree) return false;
+    if (!show.IsFree) {
+      if (state.priceMin > 0 && show.MaxPrice < state.priceMin) return false;
+      if (state.priceMax > 0 && show.MinPrice > state.priceMax) return false;
+    }
+    if (state.plannerOpen && state.planDate && show._dateSet && !show._dateSet[state.planDate]) return false;
 
     return true;
   });

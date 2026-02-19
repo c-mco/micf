@@ -7,6 +7,7 @@ import { state, dom, LS, lsSet, getRowHeight, SCROLL_BUFFER } from './state.js';
 import { $, escapeHTML, distanceDisplay, distanceKmLocal, directionsUrl } from './utils.js';
 import { requestFilter } from './worker-bridge.js';
 import { refreshCalendarSelection } from './calendar.js';
+import { conflictInfo } from './planner.js';
 
 export function getVisibleColumns() {
   return COLUMNS.filter(function(c) {
@@ -140,7 +141,22 @@ function renderCell(col, show) {
   var key = col.key;
 
   if (key === 'Title') {
-    return '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank" class="cell-title">' + escapeHTML(show.Title) + '</a>';
+    var planBtn = '';
+    if (state.plannerOpen && state.planDate) {
+      var sess = state.plannerDateSessions[show.ID];
+      var isPlanned = state.plan.some(function(p) { return p.showId === show.ID; });
+      if (isPlanned) {
+        planBtn = '<button class="plan-row-btn planned" data-show-id="' + show.ID + '" title="Remove from plan">\u2713</button>';
+      } else if (sess) {
+        var conflict = conflictInfo(sess, state.plan);
+        if (conflict) {
+          planBtn = '<button class="plan-row-btn conflict" data-show-id="' + show.ID + '" title="Conflicts with ' + escapeHTML(conflict.title) + '">\u2717</button>';
+        } else {
+          planBtn = '<button class="plan-row-btn add" data-show-id="' + show.ID + '" title="Add to plan">+</button>';
+        }
+      }
+    }
+    return planBtn + '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank" class="cell-title">' + escapeHTML(show.Title) + '</a>';
   }
   if (key === 'Distance') {
     var d = distanceDisplay(show, state);
@@ -161,7 +177,13 @@ function renderCell(col, show) {
   }
   if (key === 'Count') {
     var cls = show.Count <= 1 ? 'cell-count-low' : '';
-    return '<span class="' + cls + '">' + show.Count + '</span>';
+    var badge = '';
+    if (show.MinAvailPct > 0 && show.MinAvailPct < 20) {
+      badge = ' <span class="badge badge-red">Hot</span>';
+    } else if (show.MinAvailPct >= 20 && show.MinAvailPct < 40) {
+      badge = ' <span class="badge badge-amber">Filling</span>';
+    }
+    return '<span class="' + cls + '">' + show.Count + '</span>' + badge;
   }
   if (key === 'Capacity') return '<span class="cell-muted">' + (show.Capacity || '-') + '</span>';
   if (key === 'Duration') return show.Duration ? '<span class="cell-muted">' + show.Duration + ' min</span>' : '';
@@ -217,6 +239,7 @@ function renderDetailRow(show, colCount) {
     '<div class="detail-links">' +
     '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank">MICF Page</a>' +
     mapsLink +
+    (show.VideoEmbedURL ? '<a href="' + escapeHTML(show.VideoEmbedURL) + '" target="_blank" class="trailer-link">Trailer</a>' : '') +
     '</div></div>' +
     descHTML +
     '<div id="sessions-' + show.ID + '" class="detail-sessions">' + sessionsHTML + '</div>' +
@@ -301,6 +324,18 @@ function renderFooter(filteredCount) {
       ' <span class="pill-x">\u00d7</span></span>';
   }
 
+  if (state.showFreeOnly) {
+    pills += '<span class="filter-pill" data-pill-key="__free">Free shows only <span class="pill-x">\u00d7</span></span>';
+  }
+
+  if (state.priceMin > 0 || state.priceMax > 0) {
+    var priceLabel = 'Price: ';
+    if (state.priceMin > 0 && state.priceMax > 0) priceLabel += '$' + state.priceMin + ' \u2013 $' + state.priceMax;
+    else if (state.priceMin > 0) priceLabel += 'min $' + state.priceMin;
+    else priceLabel += 'max $' + state.priceMax;
+    pills += '<span class="filter-pill" data-pill-key="__price">' + priceLabel + ' <span class="pill-x">\u00d7</span></span>';
+  }
+
   if (state.selectedDates.length > 0) {
     var n = state.selectedDates.length;
     pills += '<span class="filter-pill" data-pill-key="__dates_include">' +
@@ -324,6 +359,20 @@ function renderFooter(filteredCount) {
         state.searchQuery = '';
         dom.search.value = '';
         updateSearchClear();
+      } else if (key === '__free') {
+        state.showFreeOnly = false;
+        lsSet(LS.freeOnly, false);
+        var freeBtn = document.getElementById('free-filter-btn');
+        if (freeBtn) freeBtn.classList.remove('active');
+      } else if (key === '__price') {
+        state.priceMin = 0;
+        state.priceMax = 0;
+        lsSet(LS.priceMin, 0);
+        lsSet(LS.priceMax, 0);
+        var minInput = document.getElementById('price-min-input');
+        var maxInput = document.getElementById('price-max-input');
+        if (minInput) minInput.value = '';
+        if (maxInput) maxInput.value = '';
       } else if (key === '__dates_include') {
         state._selectedSet.clear();
         state.selectedDates = [];

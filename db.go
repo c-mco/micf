@@ -133,7 +133,31 @@ func InitDB(path string) {
 	db.Exec("ALTER TABLE sessions ADD COLUMN is_free_show BOOLEAN")
 	db.Exec("ALTER TABLE sessions ADD COLUMN ticket_types_json TEXT")
 
-	// 4. Indexes for performance
+	// 4. History tables for change tracking
+	db.Exec(`CREATE TABLE IF NOT EXISTS session_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id INTEGER,
+		show_id INTEGER,
+		scraped_at TEXT,
+		availability_percentage INTEGER,
+		availability_level TEXT,
+		is_sold_out BOOLEAN,
+		min_price REAL,
+		max_price REAL,
+		status TEXT
+	)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_session_history_session ON session_history(session_id, scraped_at)`)
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS show_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		show_id INTEGER,
+		scraped_at TEXT,
+		status TEXT,
+		availability_level TEXT
+	)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_show_history_show ON show_history(show_id, scraped_at)`)
+
+	// 5. Indexes for performance
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_sessions_date_showid ON sessions(date, show_id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_shows_venue_id ON shows(venue_id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_sessions_show_id ON sessions(show_id)")
@@ -260,6 +284,34 @@ func SaveShow(show Show, sessions []Session) {
 			return
 		}
 	}
+
+	// Record session history (change-only: only insert if key fields changed vs last row)
+	for _, s := range sessions {
+		if s.SessionID == 0 {
+			continue
+		}
+		tx.Exec(`INSERT INTO session_history (session_id, show_id, scraped_at, availability_percentage, availability_level, is_sold_out, min_price, max_price, status)
+			SELECT ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?
+			WHERE NOT EXISTS (
+				SELECT 1 FROM session_history
+				WHERE session_id = ?
+				AND availability_percentage = ? AND is_sold_out = ? AND status = ?
+				ORDER BY scraped_at DESC LIMIT 1
+			)`,
+			s.SessionID, show.ID, s.AvailabilityPct, s.AvailabilityLevel, s.IsSoldOut, s.MinPrice, s.MaxPrice, s.Status,
+			s.SessionID, s.AvailabilityPct, s.IsSoldOut, s.Status)
+	}
+
+	// Record show history (change-only)
+	tx.Exec(`INSERT INTO show_history (show_id, scraped_at, status, availability_level)
+		SELECT ?, datetime('now'), ?, ?
+		WHERE NOT EXISTS (
+			SELECT 1 FROM show_history
+			WHERE show_id = ? AND status = ? AND availability_level = ?
+			ORDER BY scraped_at DESC LIMIT 1
+		)`,
+		show.ID, show.Status, show.AvailabilityLevel,
+		show.ID, show.Status, show.AvailabilityLevel)
 
 	if err := tx.Commit(); err != nil {
 		log.Printf("Error committing show %s: %v", show.Title, err)
