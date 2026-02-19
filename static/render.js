@@ -1,0 +1,364 @@
+// ============================================================
+// MICF Insights — Rendering
+// ============================================================
+
+import { COLUMNS, COLUMN_GROUPS, isSortable } from './columns.js';
+import { state, dom, LS, lsSet, getRowHeight, SCROLL_BUFFER } from './state.js';
+import { $, escapeHTML, distanceDisplay, distanceKmLocal, directionsUrl } from './utils.js';
+import { requestFilter } from './worker-bridge.js';
+import { refreshCalendarSelection } from './calendar.js';
+
+export function getVisibleColumns() {
+  return COLUMNS.filter(function(c) {
+    if (c.key === 'Distance' && !state.userLat) return false;
+    return state.colVisible[c.key];
+  });
+}
+
+export function renderAll() {
+  renderColgroup();
+  renderHeader();
+  renderFilters();
+  renderBody();
+  renderColumnChooser();
+}
+
+export function renderColgroup() {
+  var cols = getVisibleColumns();
+  var total = 0;
+  var html = cols.map(function(col) {
+    var w = state.colWidths[col.key];
+    total += w;
+    return '<col style="width:' + w + 'px">';
+  }).join('');
+  dom.colgroup.innerHTML = html;
+  dom.table.style.minWidth = total + 'px';
+}
+
+export function renderHeader() {
+  var cols = getVisibleColumns();
+  dom.headerRow.innerHTML = cols.map(function(col) {
+    var align = col.align === 'right' ? ' cell-right' : col.align === 'center' ? ' cell-center' : '';
+    var sortable = isSortable(col);
+    var sortClass = sortable ? ' sortable' : '';
+    var indicator = '';
+    if (sortable) {
+      var isActive = state.sortKey === col.key;
+      var symbol = isActive ? (state.sortAsc ? '\u25B2' : '\u25BC') : '\u21D5';
+      indicator = '<span class="sort-indicator' + (isActive ? ' active' : '') + '">' + symbol + '</span>';
+    }
+    return '<th class="' + align + sortClass + '" data-key="' + col.key + '" style="position:relative">' +
+      '<span>' + escapeHTML(col.label) + '</span>' + indicator +
+      '<div class="resize-handle" data-key="' + col.key + '"></div>' +
+      '</th>';
+  }).join('');
+}
+
+export function renderFilters() {
+  var cols = getVisibleColumns();
+  dom.filterRow.innerHTML = cols.map(function(col) {
+    var inner = '';
+    if (col.filter === 'text') {
+      if (col.key === 'Dates') {
+        inner = '<div class="filter-date-wrap">' +
+          '<input type="text" class="filter-input" placeholder="Filter..." data-key="' + col.key + '" value="' + escapeHTML(state.filters[col.key] || '') + '">' +
+          '<button class="filter-date-btn" title="Open calendar">&#x25BE;</button>' +
+          '</div>';
+      } else {
+        inner = '<input type="text" class="filter-input" placeholder="Filter..." data-key="' + col.key + '" value="' + escapeHTML(state.filters[col.key] || '') + '">';
+      }
+    } else if (col.filter === 'select') {
+      var val = state.filters[col.key] || '';
+      var label = val || 'All';
+      inner = '<div class="filter-select" data-key="' + col.key + '">' +
+        '<span class="filter-select-label">' + escapeHTML(label) + '</span>' +
+        (val ? '<span class="filter-select-clear">&times;</span>' : '') +
+        '<span class="filter-select-arrow">&#x25BE;</span>' +
+        '</div>';
+    } else if (col.filter === 'bool') {
+      var val = state.filters[col.key] || '';
+      inner = '<select class="filter-input" data-key="' + col.key + '">' +
+        '<option value="">All</option>' +
+        '<option value="yes"' + (val === 'yes' ? ' selected' : '') + '>Yes</option>' +
+        '<option value="no"' + (val === 'no' ? ' selected' : '') + '>No</option>' +
+        '</select>';
+    }
+    return '<th>' + inner + '</th>';
+  }).join('');
+}
+
+export function renderBody() {
+  var shows = state.filteredShows;
+  var cols = getVisibleColumns();
+  var colCount = cols.length;
+  var rh = getRowHeight();
+  var scrollTop = dom.main.scrollTop;
+  var viewHeight = dom.main.clientHeight;
+  var totalRows = shows.length;
+
+  var startIdx = Math.max(0, Math.floor(scrollTop / rh) - SCROLL_BUFFER);
+  var endIdx = Math.min(totalRows, Math.ceil((scrollTop + viewHeight) / rh) + SCROLL_BUFFER);
+
+  var padTop = startIdx * rh;
+  var padBottom = Math.max(0, (totalRows - endIdx) * rh);
+
+  var html = '';
+
+  if (padTop > 0) {
+    html += '<tr><td colspan="' + colCount + '" style="height:' + padTop + 'px;padding:0;border:0"></td></tr>';
+  }
+
+  for (var i = startIdx; i < endIdx; i++) {
+    var show = shows[i];
+    var rowClass = 'data-row' + (i % 2 ? ' even' : '') +
+      (i === state.activeRow ? ' active' : '') +
+      (state.expandedRow === show.ID ? ' expanded' : '');
+
+    var cells = '';
+    for (var c = 0; c < cols.length; c++) {
+      var col = cols[c];
+      var align = col.align === 'right' ? ' cell-right' : col.align === 'center' ? ' cell-center' : '';
+      cells += '<td class="' + align + cellClass(col, show) + '">' + renderCell(col, show) + '</td>';
+    }
+
+    html += '<tr class="' + rowClass + '" data-id="' + show.ID + '" data-idx="' + i + '">' + cells + '</tr>';
+
+    if (state.expandedRow === show.ID) {
+      html += renderDetailRow(show, colCount);
+    }
+  }
+
+  if (padBottom > 0) {
+    html += '<tr><td colspan="' + colCount + '" style="height:' + padBottom + 'px;padding:0;border:0"></td></tr>';
+  }
+
+  dom.tbody.innerHTML = html;
+  renderFooter(shows.length);
+}
+
+function renderCell(col, show) {
+  var key = col.key;
+
+  if (key === 'Title') {
+    return '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank" class="cell-title">' + escapeHTML(show.Title) + '</a>';
+  }
+  if (key === 'Distance') {
+    var d = distanceDisplay(show, state);
+    if (d === '-') return '<span class="cell-muted">-</span>';
+    return '<a href="' + directionsUrl(show) + '" target="_blank" class="cell-distance">' + d + '</a>';
+  }
+  if (key === 'HasTightArse') return show.HasTightArse ? '<span class="badge badge-emerald">$</span>' : '';
+  if (key === 'Wheelchair') return show.Wheelchair ? '<span class="badge badge-blue">Yes</span>' : '';
+  if (key === 'AssistedHearing') return show.AssistedHearing ? '<span class="badge badge-violet">Yes</span>' : '';
+  if (key === 'HasSignInterpreter') return show.HasSignInterpreter ? '<span class="badge badge-indigo">Yes</span>' : '';
+  if (key === 'HasRelaxed') return show.HasRelaxed ? '<span class="badge badge-teal">Yes</span>' : '';
+  if (key === 'AdultsOnly') return show.AdultsOnly ? '<span class="badge badge-rose">18+</span>' : '';
+  if (key === 'OnlineShow') return show.OnlineShow ? '<span class="badge badge-sky">Yes</span>' : '';
+  if (key === 'DisabledToilets') return show.DisabledToilets ? '<span class="badge badge-blue">Yes</span>' : '';
+  if (key === 'SoldOutCount') {
+    var cls = show.SoldOutCount > 0 ? 'cell-soldout-active' : 'cell-muted';
+    return '<span class="' + cls + '">' + show.SoldOutCount + '</span>';
+  }
+  if (key === 'Count') {
+    var cls = show.Count <= 1 ? 'cell-count-low' : '';
+    return '<span class="' + cls + '">' + show.Count + '</span>';
+  }
+  if (key === 'Capacity') return '<span class="cell-muted">' + (show.Capacity || '-') + '</span>';
+  if (key === 'Duration') return show.Duration ? '<span class="cell-muted">' + show.Duration + ' min</span>' : '';
+  if (key === 'Status') return '<span class="cell-muted">' + escapeHTML(show.Status || '-') + '</span>';
+  return escapeHTML(String(show[key] || ''));
+}
+
+function cellClass(col, show) {
+  if (col.key === 'Dates') return ' cell-dates';
+  if (col.key === 'VenueName') return ' cell-venue';
+  if (col.key === 'Region') return ' cell-region';
+  if (col.key === 'Suburb' && state.userSuburb && show.Suburb === state.userSuburb) return ' cell-suburb-match';
+  return '';
+}
+
+function renderDetailRow(show, colCount) {
+  var sessions = state.sessionCache[show.ID];
+  var sessionsHTML = sessions ? renderSessionTable(sessions) : '<div class="detail-loading">Loading sessions...</div>';
+
+  var imgSrc = show.LargeImageURL || show.ImageURL || show.SmallImageURL;
+  var img = imgSrc
+    ? '<img src="' + escapeHTML(imgSrc) + '" class="detail-thumb" alt="">'
+    : '';
+
+  var mapsLink = (show.Lat && show.Lng)
+    ? '<a href="' + directionsUrl(show) + '" target="_blank" class="maps-link">Maps</a>'
+    : '';
+
+  var durationBadge = show.Duration
+    ? '<span class="badge badge-slate">' + show.Duration + ' min</span>'
+    : '';
+
+  var descHTML = show.Description
+    ? '<div class="detail-description">' + show.Description + '</div>'
+    : '';
+
+  return '<tr class="detail-row"><td colspan="' + colCount + '">' +
+    '<div class="detail-inner"><div class="detail-top">' +
+    img +
+    '<div class="detail-info">' +
+    '<div class="detail-header">' +
+    '<span class="detail-title">' + escapeHTML(show.Title) + '</span>' +
+    '<span class="detail-artist">' + escapeHTML(show.Artist) + '</span>' +
+    '<span class="detail-venue">' + escapeHTML(show.VenueName) + '</span>' +
+    durationBadge +
+    '<div class="detail-links">' +
+    '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank">MICF Page</a>' +
+    mapsLink +
+    '</div></div>' +
+    descHTML +
+    '<div id="sessions-' + show.ID + '" class="detail-sessions">' + sessionsHTML + '</div>' +
+    (show.AccessibilityDetails ? '<div class="detail-accessibility">' + show.AccessibilityDetails + '</div>' : '') +
+    '</div></div></div></td></tr>';
+}
+
+export function renderSessionTable(sessions) {
+  if (!sessions || sessions.length === 0) return '<div class="detail-loading">No sessions found</div>';
+
+  var rows = sessions.map(function(s) {
+    var rowClass = s.IsSoldOut ? ' class="sold-out"' : s.Cancelled ? ' class="cancelled"' : '';
+    var statusBadge = s.IsSoldOut ? '<span class="badge badge-red">Sold Out</span>'
+      : s.Cancelled ? '<span class="badge badge-slate">Cancelled</span>'
+      : '<span class="badge badge-green">' + escapeHTML(s.Status || 'Available') + '</span>';
+
+    var tags = '';
+    if (s.IsTightArse) tags += '<span class="badge badge-emerald">$</span> ';
+    if (s.HasSignInterpreter) tags += '<span class="badge badge-indigo">Auslan</span> ';
+    if (s.IsRelaxed) tags += '<span class="badge badge-teal">Relaxed</span> ';
+    if (s.IsFilmed) tags += '<span class="badge badge-slate">Filmed</span> ';
+    if (s.Preview) tags += '<span class="badge badge-amber">Preview</span> ';
+    if (s.ExtraShow) tags += '<span class="badge badge-orange">Extra</span> ';
+
+    return '<tr' + rowClass + '>' +
+      '<td>' + escapeHTML(s.Date) + '</td>' +
+      '<td>' + escapeHTML(s.Time) + '</td>' +
+      '<td>' + statusBadge + '</td>' +
+      '<td>' + escapeHTML(s.ShowType || '-') + '</td>' +
+      '<td>' + tags + '</td></tr>';
+  }).join('');
+
+  return '<table class="mini-table"><thead><tr>' +
+    '<th>Date</th><th>Time</th><th>Status</th><th>Type</th><th>Tags</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderFooter(filteredCount) {
+  dom.footerCount.textContent = 'Showing ' + filteredCount + ' of ' + state.shows.length + ' shows';
+
+  if (state.totalShows > state.shows.length) {
+    dom.footerTotal.textContent = '(' + state.totalShows + ' total in DB)';
+    dom.footerTotal.style.display = '';
+  } else {
+    dom.footerTotal.style.display = 'none';
+  }
+
+  var pills = '';
+
+  COLUMNS.forEach(function(col) {
+    var f = state.filters[col.key];
+    if (f) {
+      pills += '<span class="filter-pill" data-pill-key="' + col.key + '">' +
+        escapeHTML(col.label) + ': ' + escapeHTML(f) +
+        ' <span class="pill-x">\u00d7</span></span>';
+    }
+  });
+
+  if (state.searchQuery) {
+    pills += '<span class="filter-pill" data-pill-key="__search">' +
+      'Search: ' + escapeHTML(state.searchQuery) +
+      ' <span class="pill-x">\u00d7</span></span>';
+  }
+
+  if (state.selectedDates.length > 0) {
+    var n = state.selectedDates.length;
+    pills += '<span class="filter-pill" data-pill-key="__dates_include">' +
+      n + ' date' + (n > 1 ? 's' : '') + ' included' +
+      ' <span class="pill-x">\u00d7</span></span>';
+  }
+
+  if (state.excludedDates.length > 0) {
+    var n = state.excludedDates.length;
+    pills += '<span class="filter-pill pill-exclude" data-pill-key="__dates_exclude">' +
+      n + ' date' + (n > 1 ? 's' : '') + ' excluded' +
+      ' <span class="pill-x">\u00d7</span></span>';
+  }
+
+  dom.footerPills.innerHTML = pills;
+
+  dom.footerPills.querySelectorAll('.filter-pill').forEach(function(pill) {
+    pill.addEventListener('click', function() {
+      var key = pill.dataset.pillKey;
+      if (key === '__search') {
+        state.searchQuery = '';
+        dom.search.value = '';
+        updateSearchClear();
+      } else if (key === '__dates_include') {
+        state._selectedSet.clear();
+        state.selectedDates = [];
+        lsSet(LS.dates, state.selectedDates);
+        refreshCalendarSelection();
+        requestFilter(true);
+        return;
+      } else if (key === '__dates_exclude') {
+        state._excludedSet.clear();
+        state.excludedDates = [];
+        lsSet(LS.excludedDates, state.excludedDates);
+        refreshCalendarSelection();
+        requestFilter(true);
+        return;
+      } else {
+        state.filters[key] = '';
+        var input = dom.filterRow.querySelector('[data-key="' + key + '"]');
+        if (input) input.value = '';
+      }
+      requestFilter(true);
+    });
+  });
+}
+
+export function renderColumnChooser() {
+  var html = '';
+  COLUMN_GROUPS.forEach(function(group) {
+    var cols = COLUMNS.filter(function(c) { return c.group === group; });
+    html += '<div class="colchooser-group">';
+    html += '<div class="colchooser-group-label">' + escapeHTML(group) + '</div>';
+    cols.forEach(function(col) {
+      var checked = state.colVisible[col.key] ? ' checked' : '';
+      var locked = col.locked ? ' locked' : '';
+      var disabled = col.locked ? ' disabled' : '';
+      html += '<label class="colchooser-item' + locked + '">' +
+        '<input type="checkbox" data-key="' + col.key + '"' + checked + disabled + '> ' +
+        escapeHTML(col.label) + '</label>';
+    });
+    html += '</div>';
+  });
+  $('#colchooser-list').innerHTML = html;
+}
+
+export function updateSearchClear() {
+  if (state.searchQuery) {
+    dom.searchClear.classList.remove('hidden');
+  } else {
+    dom.searchClear.classList.add('hidden');
+  }
+}
+
+export function updateSortIndicators() {
+  dom.headerRow.querySelectorAll('th[data-key]').forEach(function(th) {
+    var key = th.dataset.key;
+    var ind = th.querySelector('.sort-indicator');
+    if (!ind) return;
+    if (key === state.sortKey) {
+      ind.textContent = state.sortAsc ? '\u25B2' : '\u25BC';
+      ind.classList.add('active');
+    } else {
+      ind.textContent = '\u21D5';
+      ind.classList.remove('active');
+    }
+  });
+}

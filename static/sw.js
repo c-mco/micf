@@ -8,12 +8,21 @@
 //   Export endpoints:        network-only (not cached)
 // ============================================================
 
-var CACHE = 'micf-v1';
+// CACHE_VERSION is injected by the server at serve time (git commit hash).
+var CACHE = 'micf-' + CACHE_VERSION;
 
 var PRECACHE = [
   '/static/app.css',
   '/static/app.js',
   '/static/worker.js',
+  '/static/filter.js',
+  '/static/render.js',
+  '/static/state.js',
+  '/static/worker-bridge.js',
+  '/static/events.js',
+  '/static/calendar.js',
+  '/static/columns.js',
+  '/static/utils.js',
 ];
 
 // Install: precache static assets

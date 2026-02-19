@@ -9,10 +9,14 @@ import (
 
 var db *sql.DB
 
-// InitDB sets up the schema and enables high-performance WAL mode
-func InitDB() {
+// InitDB sets up the schema and enables high-performance WAL mode.
+// path defaults to "./micf.db" if empty.
+func InitDB(path string) {
+	if path == "" {
+		path = "./micf.db"
+	}
 	var err error
-	db, err = sql.Open("sqlite3", "./micf.db")
+	db, err = sql.Open("sqlite3", path)
 	if err != nil {
 		log.Fatal(err)
 	}
