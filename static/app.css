@@ -434,6 +434,9 @@ th.sortable:hover .sort-indicator { opacity: 0.4; }
 .mini-table td { padding: 3px 8px; font-size: 11px; border: 1px solid var(--border); }
 .mini-table .sold-out { color: var(--text-light); text-decoration: line-through; }
 .mini-table .cancelled { color: var(--red); text-decoration: line-through; opacity: 0.5; }
+.avail-high { color: var(--green); font-weight: 600; }
+.avail-med  { color: var(--amber); font-weight: 600; }
+.avail-low  { color: var(--red);   font-weight: 600; }
 
 /* --- Footer --- */
 .footer {

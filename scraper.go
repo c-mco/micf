@@ -60,6 +60,11 @@ type Show struct {
 	ImageURL      string `json:"imageUrl"`
 	SmallImageURL string `json:"smallImageUrl"`
 	LargeImageURL string `json:"largeImageUrl"`
+	GuideImageURL string `json:"guideImageUrl"`
+	VideoEmbedURL string `json:"videoEmbedUrl"`
+	Red61ShowID   string `json:"red61ShowId"`
+	AvailabilityLevel string `json:"availabilityLevel"`
+	SortingTitle  string `json:"sortingTitle"`
 	OnlineShow    bool   `json:"onlineShow"`
 	OnDemandShow  bool   `json:"onDemandShow"`
 	Status        string `json:"status"`
@@ -79,6 +84,7 @@ type Session struct {
 	IsSoldOut          bool   `json:"soldout"`
 	Cancelled          bool   `json:"cancelled"`
 	SessionID          int    `json:"sessionId"`
+	PerformanceRef     string `json:"performanceRef"`
 	Status             string `json:"status"`
 	Preview            bool   `json:"preview"`
 	LaughPack          bool   `json:"laughPack"`
@@ -87,6 +93,30 @@ type Session struct {
 	ShowType           string `json:"showType"`
 	IsFilmed           bool   `json:"isFilmed"`
 	IsRelaxed          bool   `json:"isRelaxed"`
+	// Fields populated from getsessiondetails API
+	AvailabilityLevel string  `json:"-"`
+	AvailabilityPct   int     `json:"-"`
+	MinPrice          float64 `json:"-"`
+	MaxPrice          float64 `json:"-"`
+	IsFreeShow        bool    `json:"-"`
+	TicketTypesJSON   string  `json:"-"`
+}
+
+// TicketType represents one pricing tier from getsessiondetails
+type TicketType struct {
+	Price     float64 `json:"price"`
+	Concession struct {
+		Title string `json:"title"`
+		Code  string `json:"code"`
+	} `json:"concession"`
+}
+
+// SessionDetails is the response shape from showapi/getsessiondetails
+type SessionDetails struct {
+	AvailabilityLevel string       `json:"availabilityLevel"`
+	AvailabilityPct   int          `json:"availabilityPercentage"`
+	TicketTypes       []TicketType `json:"ticketTypes"`
+	IsFreeShow        bool         `json:"isFreeShow"`
 }
 
 // ScrapeStats tracks what changed during a scrape
@@ -363,6 +393,28 @@ func fetchMasterList() ([]Show, error) {
 	return data.Items, nil
 }
 
+// fetchSessionDetails calls the getsessiondetails API for one session,
+// returning pricing and availability data.
+func fetchSessionDetails(showID, sessionID int, performanceRef string) (*SessionDetails, error) {
+	u := fmt.Sprintf(
+		"https://www.comedyfestival.com.au/umbraco/api/showapi/getsessiondetails?showId=%d&sessionId=%d&performanceRef=%s",
+		showID, sessionID, url.QueryEscape(performanceRef),
+	)
+	resp, err := httpClient.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var d SessionDetails
+	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
 func scrapeShowDetails(show *Show, sessionRe, durationRe *regexp.Regexp) ([]Session, error) {
 	fullURL := "https://www.comedyfestival.com.au" + show.URL
 	resp, err := httpClient.Get(fullURL)
@@ -421,6 +473,37 @@ func scrapeShowDetails(show *Show, sessionRe, durationRe *regexp.Regexp) ([]Sess
 	cwRe := regexp.MustCompile(`(?i)content\s+warning[s]?\s*:?\s*([^<]+)`)
 	if cm := cwRe.FindStringSubmatch(bodyStr); len(cm) >= 2 {
 		show.ContentWarnings = strings.TrimSpace(cm[1])
+	}
+
+	// Enrich sessions with pricing/availability from getsessiondetails API
+	for i := range sessions {
+		s := &sessions[i]
+		if s.SessionID == 0 || s.PerformanceRef == "" {
+			continue
+		}
+		details, err := fetchSessionDetails(show.ID, s.SessionID, s.PerformanceRef)
+		if err != nil {
+			log.Printf("Session detail error for %s/%d: %v", show.Title, s.SessionID, err)
+			continue
+		}
+		s.AvailabilityLevel = details.AvailabilityLevel
+		s.AvailabilityPct = details.AvailabilityPct
+		s.IsFreeShow = details.IsFreeShow
+		if len(details.TicketTypes) > 0 {
+			s.MinPrice = details.TicketTypes[0].Price
+			s.MaxPrice = details.TicketTypes[0].Price
+			for _, t := range details.TicketTypes[1:] {
+				if t.Price < s.MinPrice {
+					s.MinPrice = t.Price
+				}
+				if t.Price > s.MaxPrice {
+					s.MaxPrice = t.Price
+				}
+			}
+		}
+		if jsonBytes, err := json.Marshal(details.TicketTypes); err == nil {
+			s.TicketTypesJSON = string(jsonBytes)
+		}
 	}
 
 	return sessions, nil

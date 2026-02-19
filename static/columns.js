@@ -11,6 +11,7 @@ export var COLUMNS = [
   { key: 'Region',             label: 'Region',        width: 90,  minWidth: 60,  filter: 'select', align: 'left',   visible: true,  locked: false, group: 'Venue' },
   { key: 'Distance',           label: 'Dist',          width: 65,  minWidth: 50,  filter: 'none',   align: 'right',  visible: true,  locked: false, group: 'Venue' },
   { key: 'Count',              label: 'Sessions',      width: 65,  minWidth: 45,  filter: 'none',   align: 'right',  visible: true,  locked: false, group: 'Sessions' },
+  { key: 'Price',              label: 'Price',         width: 90,  minWidth: 60,  filter: 'none',   align: 'right',  visible: true,  locked: false, group: 'Sessions' },
   { key: 'HasTightArse',       label: 'Tight Arse',    width: 75,  minWidth: 50,  filter: 'bool',   align: 'center', visible: true,  locked: false, group: 'Sessions' },
   { key: 'Capacity',           label: 'Capacity',      width: 70,  minWidth: 45,  filter: 'none',   align: 'right',  visible: false, locked: false, group: 'Venue' },
   { key: 'SoldOutCount',       label: 'Sold Out',      width: 70,  minWidth: 45,  filter: 'none',   align: 'right',  visible: false, locked: false, group: 'Sessions' },
@@ -27,7 +28,7 @@ export var COLUMNS = [
 
 export var COLUMN_GROUPS = ['Show Info', 'Venue', 'Sessions', 'Accessibility'];
 
-export var SORTABLE_NONE = { Count: 1, Distance: 1, Capacity: 1, SoldOutCount: 1, Duration: 1 };
+export var SORTABLE_NONE = { Count: 1, Distance: 1, Capacity: 1, SoldOutCount: 1, Duration: 1, Price: 1 };
 
 export function isSortable(col) {
   return col.filter !== 'none' || SORTABLE_NONE[col.key];

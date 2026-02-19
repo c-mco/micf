@@ -62,6 +62,18 @@ func setupTestDB(t *testing.T) {
 		"ALTER TABLE shows ADD COLUMN content_warnings TEXT",
 		"ALTER TABLE shows ADD COLUMN price_range TEXT",
 		"ALTER TABLE shows ADD COLUMN tags TEXT",
+		"ALTER TABLE shows ADD COLUMN guide_image_url TEXT",
+		"ALTER TABLE shows ADD COLUMN video_embed_url TEXT",
+		"ALTER TABLE shows ADD COLUMN red61_show_id TEXT",
+		"ALTER TABLE shows ADD COLUMN availability_level TEXT",
+		"ALTER TABLE shows ADD COLUMN sorting_title TEXT",
+		"ALTER TABLE sessions ADD COLUMN performance_ref TEXT",
+		"ALTER TABLE sessions ADD COLUMN availability_level TEXT",
+		"ALTER TABLE sessions ADD COLUMN availability_percentage INTEGER",
+		"ALTER TABLE sessions ADD COLUMN min_price REAL",
+		"ALTER TABLE sessions ADD COLUMN max_price REAL",
+		"ALTER TABLE sessions ADD COLUMN is_free_show BOOLEAN",
+		"ALTER TABLE sessions ADD COLUMN ticket_types_json TEXT",
 	}
 	for _, m := range migrations {
 		db.Exec(m) // ignore errors (column may already exist)

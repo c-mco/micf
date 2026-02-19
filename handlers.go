@@ -44,6 +44,9 @@ type ShowView struct {
 	Description          string  `json:"Description"`
 	Duration             int     `json:"Duration"`
 	LargeImageURL        string  `json:"LargeImageURL"`
+	MinPrice             float64 `json:"MinPrice"`
+	MaxPrice             float64 `json:"MaxPrice"`
+	IsFree               bool    `json:"IsFree"`
 }
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +122,10 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			COALESCE(GROUP_CONCAT(DISTINCT sess.date), '')                     AS session_dates,
 			COALESCE(s.description, '')                                        AS description,
 			COALESCE(s.duration, 0)                                            AS duration,
-			COALESCE(s.large_image_url, '')                                    AS large_image_url
+			COALESCE(s.large_image_url, '')                                    AS large_image_url,
+			COALESCE(MIN(CASE WHEN sess.min_price > 0 THEN sess.min_price ELSE NULL END), 0) AS min_price,
+			COALESCE(MAX(sess.max_price), 0)                                   AS max_price,
+			COALESCE(MAX(sess.is_free_show), 0)                                AS is_free
 		FROM shows s
 		LEFT JOIN sessions sess ON s.id = sess.show_id
 		LEFT JOIN venues v ON s.venue_id = v.id
@@ -144,6 +150,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		var wheelchair, onlineShow, onDemandShow, assistedHearing, adultsOnly int
 		var hasSignInterpreter, hasRelaxed, hasTightArse, disabledToilets int
 
+		var isFree int
 		err := rows.Scan(
 			&sv.ID, &sv.Title, &sv.Artist, &sv.URL, &sv.Venue,
 			&sv.Count, &sv.Dates, &sv.Suburb, &wheelchair, &sv.Capacity,
@@ -153,6 +160,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			&hasSignInterpreter, &hasRelaxed, &hasTightArse, &sv.SoldOutCount,
 			&sv.VenueName, &disabledToilets, &sv.SessionDates,
 			&sv.Description, &sv.Duration, &sv.LargeImageURL,
+			&sv.MinPrice, &sv.MaxPrice, &isFree,
 		)
 		if err != nil {
 			log.Printf("Scan error: %v", err)
@@ -168,6 +176,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		sv.HasRelaxed = hasRelaxed == 1
 		sv.HasTightArse = hasTightArse == 1
 		sv.DisabledToilets = disabledToilets == 1
+		sv.IsFree = isFree == 1
 
 		if sv.Suburb != "TBA" && sv.Suburb != "" {
 			suburbs[sv.Suburb] = true
@@ -250,21 +259,26 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 
 // SessionView is the data structure returned by /api/sessions.
 type SessionView struct {
-	SessionID          int    `json:"SessionID"`
-	Date               string `json:"Date"`
-	Time               string `json:"Time"`
-	FullDate           string `json:"FullDate"`
-	IsTightArse        bool   `json:"IsTightArse"`
-	IsSoldOut          bool   `json:"IsSoldOut"`
-	Cancelled          bool   `json:"Cancelled"`
-	Status             string `json:"Status"`
-	Preview            bool   `json:"Preview"`
-	LaughPack          bool   `json:"LaughPack"`
-	ExtraShow          bool   `json:"ExtraShow"`
-	HasSignInterpreter bool   `json:"HasSignInterpreter"`
-	ShowType           string `json:"ShowType"`
-	IsFilmed           bool   `json:"IsFilmed"`
-	IsRelaxed          bool   `json:"IsRelaxed"`
+	SessionID          int     `json:"SessionID"`
+	Date               string  `json:"Date"`
+	Time               string  `json:"Time"`
+	FullDate           string  `json:"FullDate"`
+	IsTightArse        bool    `json:"IsTightArse"`
+	IsSoldOut          bool    `json:"IsSoldOut"`
+	Cancelled          bool    `json:"Cancelled"`
+	Status             string  `json:"Status"`
+	Preview            bool    `json:"Preview"`
+	LaughPack          bool    `json:"LaughPack"`
+	ExtraShow          bool    `json:"ExtraShow"`
+	HasSignInterpreter bool    `json:"HasSignInterpreter"`
+	ShowType           string  `json:"ShowType"`
+	IsFilmed           bool    `json:"IsFilmed"`
+	IsRelaxed          bool    `json:"IsRelaxed"`
+	AvailabilityLevel  string  `json:"AvailabilityLevel"`
+	AvailabilityPct    int     `json:"AvailabilityPct"`
+	MinPrice           float64 `json:"MinPrice"`
+	MaxPrice           float64 `json:"MaxPrice"`
+	IsFreeShow         bool    `json:"IsFreeShow"`
 }
 
 func handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +295,9 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 			COALESCE(cancelled, 0), COALESCE(status, ''), COALESCE(preview, 0),
 			COALESCE(laugh_pack, 0), COALESCE(extra_show, 0),
 			COALESCE(has_sign_interpreter, 0), COALESCE(show_type, ''),
-			COALESCE(is_filmed, 0), COALESCE(is_relaxed, 0)
+			COALESCE(is_filmed, 0), COALESCE(is_relaxed, 0),
+			COALESCE(availability_level, ''), COALESCE(availability_percentage, 0),
+			COALESCE(min_price, 0), COALESCE(max_price, 0), COALESCE(is_free_show, 0)
 		FROM sessions WHERE show_id = ?
 		ORDER BY full_date ASC`, showID)
 	if err != nil {
@@ -295,13 +311,15 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var sv SessionView
 		var tightArse, soldOut, cancelled, preview, laughPack, extraShow int
-		var hasSign, isFilmed, isRelaxed int
+		var hasSign, isFilmed, isRelaxed, isFreeShow int
 
 		err := rows.Scan(
 			&sv.SessionID, &sv.Date, &sv.Time, &sv.FullDate,
 			&tightArse, &soldOut, &cancelled, &sv.Status,
 			&preview, &laughPack, &extraShow, &hasSign,
 			&sv.ShowType, &isFilmed, &isRelaxed,
+			&sv.AvailabilityLevel, &sv.AvailabilityPct,
+			&sv.MinPrice, &sv.MaxPrice, &isFreeShow,
 		)
 		if err != nil {
 			log.Printf("Session scan error: %v", err)
@@ -317,6 +335,7 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 		sv.HasSignInterpreter = hasSign == 1
 		sv.IsFilmed = isFilmed == 1
 		sv.IsRelaxed = isRelaxed == 1
+		sv.IsFreeShow = isFreeShow == 1
 
 		sessions = append(sessions, sv)
 	}

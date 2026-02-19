@@ -128,6 +128,8 @@ function prepareShow(show) {
   for (var i = 0; i < show._dates.length; i++) {
     show._dateSet[show._dates[i]] = true;
   }
+  // Computed field used by Price column sort
+  show.Price = show.IsFree ? 0 : (show.MinPrice || 9999);
 }
 
 // --- Exports ---

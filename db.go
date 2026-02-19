@@ -117,6 +117,22 @@ func InitDB(path string) {
 	db.Exec("ALTER TABLE shows ADD COLUMN price_range TEXT")
 	db.Exec("ALTER TABLE shows ADD COLUMN tags TEXT")
 
+	// Shows: extra fields from search API
+	db.Exec("ALTER TABLE shows ADD COLUMN guide_image_url TEXT")
+	db.Exec("ALTER TABLE shows ADD COLUMN video_embed_url TEXT")
+	db.Exec("ALTER TABLE shows ADD COLUMN red61_show_id TEXT")
+	db.Exec("ALTER TABLE shows ADD COLUMN availability_level TEXT")
+	db.Exec("ALTER TABLE shows ADD COLUMN sorting_title TEXT")
+
+	// Sessions: performanceRef + pricing/availability from getsessiondetails
+	db.Exec("ALTER TABLE sessions ADD COLUMN performance_ref TEXT")
+	db.Exec("ALTER TABLE sessions ADD COLUMN availability_level TEXT")
+	db.Exec("ALTER TABLE sessions ADD COLUMN availability_percentage INTEGER")
+	db.Exec("ALTER TABLE sessions ADD COLUMN min_price REAL")
+	db.Exec("ALTER TABLE sessions ADD COLUMN max_price REAL")
+	db.Exec("ALTER TABLE sessions ADD COLUMN is_free_show BOOLEAN")
+	db.Exec("ALTER TABLE sessions ADD COLUMN ticket_types_json TEXT")
+
 	// 4. Indexes for performance
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_sessions_date_showid ON sessions(date, show_id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_shows_venue_id ON shows(venue_id)")
@@ -222,8 +238,8 @@ func SaveShow(show Show, sessions []Session) {
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`INSERT OR REPLACE INTO shows (id, title, artist, url, venue_summary, dates, show_count, image_url, small_image_url, online_show, on_demand_show, status, venue_id, large_image_url, description, duration, content_warnings, price_range, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		show.ID, show.Title, show.Artist, show.URL, show.VenueSummary, show.Dates, show.ShowCount, show.ImageURL, show.SmallImageURL, show.OnlineShow, show.OnDemandShow, show.Status, show.VenueID, show.LargeImageURL, show.Description, show.Duration, show.ContentWarnings, show.PriceRange, show.Tags)
+	_, err = tx.Exec(`INSERT OR REPLACE INTO shows (id, title, artist, url, venue_summary, dates, show_count, image_url, small_image_url, online_show, on_demand_show, status, venue_id, large_image_url, description, duration, content_warnings, price_range, tags, guide_image_url, video_embed_url, red61_show_id, availability_level, sorting_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		show.ID, show.Title, show.Artist, show.URL, show.VenueSummary, show.Dates, show.ShowCount, show.ImageURL, show.SmallImageURL, show.OnlineShow, show.OnDemandShow, show.Status, show.VenueID, show.LargeImageURL, show.Description, show.Duration, show.ContentWarnings, show.PriceRange, show.Tags, show.GuideImageURL, show.VideoEmbedURL, show.Red61ShowID, show.AvailabilityLevel, show.SortingTitle)
 	if err != nil {
 		log.Printf("Error saving show %s: %v", show.Title, err)
 		return
@@ -236,9 +252,9 @@ func SaveShow(show Show, sessions []Session) {
 	}
 
 	for _, s := range sessions {
-		_, err := tx.Exec(`INSERT INTO sessions (show_id, date, time, full_date, is_tight_arse, is_sold_out, cancelled, session_id, status, preview, laugh_pack, extra_show, has_sign_interpreter, show_type, is_filmed, is_relaxed)
-						  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			show.ID, s.Date, s.Time, s.FullDate, s.IsTightArse, s.IsSoldOut, s.Cancelled, s.SessionID, s.Status, s.Preview, s.LaughPack, s.ExtraShow, s.HasSignInterpreter, s.ShowType, s.IsFilmed, s.IsRelaxed)
+		_, err := tx.Exec(`INSERT INTO sessions (show_id, date, time, full_date, is_tight_arse, is_sold_out, cancelled, session_id, status, preview, laugh_pack, extra_show, has_sign_interpreter, show_type, is_filmed, is_relaxed, performance_ref, availability_level, availability_percentage, min_price, max_price, is_free_show, ticket_types_json)
+						  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			show.ID, s.Date, s.Time, s.FullDate, s.IsTightArse, s.IsSoldOut, s.Cancelled, s.SessionID, s.Status, s.Preview, s.LaughPack, s.ExtraShow, s.HasSignInterpreter, s.ShowType, s.IsFilmed, s.IsRelaxed, s.PerformanceRef, s.AvailabilityLevel, s.AvailabilityPct, s.MinPrice, s.MaxPrice, s.IsFreeShow, s.TicketTypesJSON)
 		if err != nil {
 			log.Printf("Error saving session for %s: %v", show.Title, err)
 			return

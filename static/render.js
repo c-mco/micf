@@ -166,6 +166,13 @@ function renderCell(col, show) {
   if (key === 'Capacity') return '<span class="cell-muted">' + (show.Capacity || '-') + '</span>';
   if (key === 'Duration') return show.Duration ? '<span class="cell-muted">' + show.Duration + ' min</span>' : '';
   if (key === 'Status') return '<span class="cell-muted">' + escapeHTML(show.Status || '-') + '</span>';
+  if (key === 'Price') {
+    if (show.IsFree) return '<span class="badge badge-emerald">Free</span>';
+    if (!show.MinPrice) return '<span class="cell-muted">-</span>';
+    var lo = '$' + show.MinPrice.toFixed(0);
+    if (show.MaxPrice && show.MaxPrice !== show.MinPrice) lo += ' – $' + show.MaxPrice.toFixed(0);
+    return '<span class="cell-muted">' + lo + '</span>';
+  }
   return escapeHTML(String(show[key] || ''));
 }
 
@@ -234,16 +241,36 @@ export function renderSessionTable(sessions) {
     if (s.Preview) tags += '<span class="badge badge-amber">Preview</span> ';
     if (s.ExtraShow) tags += '<span class="badge badge-orange">Extra</span> ';
 
+    var priceCell = '';
+    if (s.IsFreeShow) {
+      priceCell = '<span class="badge badge-emerald">Free</span>';
+    } else if (s.MinPrice) {
+      var p = '$' + s.MinPrice.toFixed(0);
+      if (s.MaxPrice && s.MaxPrice !== s.MinPrice) p += '–$' + s.MaxPrice.toFixed(0);
+      priceCell = '<span class="cell-muted">' + p + '</span>';
+    } else {
+      priceCell = '<span class="cell-muted">-</span>';
+    }
+
+    var availCell = '';
+    if (s.AvailabilityPct > 0) {
+      var pct = s.AvailabilityPct;
+      var cls = pct > 60 ? 'avail-high' : pct > 25 ? 'avail-med' : 'avail-low';
+      availCell = '<span class="' + cls + '">' + pct + '%</span>';
+    }
+
     return '<tr' + rowClass + '>' +
       '<td>' + escapeHTML(s.Date) + '</td>' +
       '<td>' + escapeHTML(s.Time) + '</td>' +
       '<td>' + statusBadge + '</td>' +
+      '<td>' + priceCell + '</td>' +
+      '<td>' + availCell + '</td>' +
       '<td>' + escapeHTML(s.ShowType || '-') + '</td>' +
       '<td>' + tags + '</td></tr>';
   }).join('');
 
   return '<table class="mini-table"><thead><tr>' +
-    '<th>Date</th><th>Time</th><th>Status</th><th>Type</th><th>Tags</th>' +
+    '<th>Date</th><th>Time</th><th>Status</th><th>Price</th><th>Avail</th><th>Type</th><th>Tags</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
