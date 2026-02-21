@@ -4,7 +4,7 @@
 
 import { COLUMNS } from './columns.js';
 import { state, dom } from './state.js';
-import { renderBody } from './render.js';
+import { renderAll, renderBody } from './render.js';
 
 export function initWorker() {
   try {
@@ -24,7 +24,12 @@ export function initWorker() {
         if (state._pendingResetScroll && dom.main) {
           dom.main.scrollTop = 0;
         }
-        renderBody();
+        if (state._needsFullRender) {
+          state._needsFullRender = false;
+          renderAll();
+        } else {
+          renderBody();
+        }
       }
     };
 
@@ -57,11 +62,17 @@ export function requestFilter(resetScroll) {
       priceMin: state.priceMin,
       priceMax: state.priceMax,
       planDate: state.plannerOpen ? state.planDate : '',
+      plannerTimes: state.plannerTimes,
     });
   } else {
     syncFilterSort();
     if (resetScroll && dom.main) dom.main.scrollTop = 0;
-    renderBody();
+    if (state._needsFullRender) {
+      state._needsFullRender = false;
+      renderAll();
+    } else {
+      renderBody();
+    }
   }
 }
 
@@ -69,8 +80,15 @@ export function requestFilter(resetScroll) {
 function syncFilterSort() {
   var key = state.sortKey;
   var asc = state.sortAsc;
+  var plannerTimes = state.plannerTimes;
   state.shows.sort(function(a, b) {
-    var v1 = a[key], v2 = b[key];
+    var v1, v2;
+    if (key === 'PlanTime') {
+      v1 = (plannerTimes && plannerTimes[a.ID]) || '9999';
+      v2 = (plannerTimes && plannerTimes[b.ID]) || '9999';
+    } else {
+      v1 = a[key]; v2 = b[key];
+    }
     if (typeof v1 === 'boolean') { v1 = v1 ? 1 : 0; v2 = v2 ? 1 : 0; }
     if (typeof v1 === 'string') { v1 = v1.toLowerCase(); v2 = (v2 || '').toLowerCase(); }
     if (v1 == null) v1 = '';

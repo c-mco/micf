@@ -117,10 +117,13 @@ function stripArticle(s) {
   return (s || '').replace(/^(a |an |the )/i, '');
 }
 
-function sortShows(shows, key, asc, userLat, userLng) {
+function sortShows(shows, key, asc, userLat, userLng, plannerTimes) {
   shows.sort(function(a, b) {
     var v1, v2;
-    if (key === 'Distance') {
+    if (key === 'PlanTime') {
+      v1 = (plannerTimes && plannerTimes[a.ID]) || '9999';
+      v2 = (plannerTimes && plannerTimes[b.ID]) || '9999';
+    } else if (key === 'Distance') {
       v1 = distanceKm(a, userLat, userLng);
       v2 = distanceKm(b, userLat, userLng);
     } else if (key === 'Title') {

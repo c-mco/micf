@@ -218,3 +218,28 @@ export function updateDateBtn() {
   if (n > 0) dom.dateBtn.classList.add('active');
   else dom.dateBtn.classList.remove('active');
 }
+
+// --- Planner calendar (single-select, no exclude) ---
+
+export function renderPlannerCal() {
+  var container = document.getElementById('planner-cal');
+  if (!container || !state.calendarMonths.length) return;
+  container.innerHTML = state.calendarMonths.join('');
+  // Strip main calendar selection state — planner uses plan-selected instead
+  container.querySelectorAll('.cal-day').forEach(function(el) {
+    el.classList.remove('selected', 'excluded');
+  });
+  refreshPlannerCalSelection();
+}
+
+export function refreshPlannerCalSelection() {
+  var container = document.getElementById('planner-cal');
+  if (!container) return;
+  container.querySelectorAll('.cal-day').forEach(function(el) {
+    var iso = el.dataset.iso;
+    if (!iso) return;
+    el.classList.toggle('plan-selected', iso === state.planDate);
+    var hasPlan = !!(state.plans[iso] && state.plans[iso].length > 0);
+    el.classList.toggle('plan-has-items', hasPlan);
+  });
+}

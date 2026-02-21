@@ -9,7 +9,7 @@ import { isSortable } from './columns.js';
 import { renderAll, renderBody, renderColgroup, renderHeader, renderFilters, renderColumnChooser, renderSessionTable, updateSearchClear, updateSortIndicators } from './render.js';
 import { requestFilter } from './worker-bridge.js';
 import { toggleDate, clearDates, selectThisWeekend, selectThisWeek } from './calendar.js';
-import { openPlanner, closePlanner, setPlanDate, renderPlanner, addToPlan, removeFromPlan } from './planner.js';
+import { openPlanner, closePlanner, setPlanDate, renderPlanner, addToPlan, removeFromPlan, updatePlannerBtn, clearDayPlan } from './planner.js';
 
 // --- Filter Dropdown Portal ---
 
@@ -84,6 +84,7 @@ function closeAllDropdowns() {
   state.colChooserOpen = false;
   state.exportOpen = false;
   state.priceOpen = false;
+  state.overflowOpen = false;
   updateDropdowns();
 }
 
@@ -92,6 +93,7 @@ function updateDropdowns() {
   toggleClass('#colchooser-panel', 'open', state.colChooserOpen);
   toggleClass('#export-panel', 'open', state.exportOpen);
   toggleClass('#price-panel', 'open', state.priceOpen);
+  toggleClass('#overflow-panel', 'open', state.overflowOpen);
 }
 
 // --- Location ---
@@ -123,14 +125,20 @@ function requestLocation() {
 }
 
 export function updateLocationBtn() {
+  var label, ovLabel;
   if (state.userLat) {
-    dom.locationBtn.textContent = state.userSuburb || 'Located';
+    label = state.userSuburb || 'Located';
+    ovLabel = label;
     dom.unitBtn.style.display = '';
     dom.unitBtn.textContent = state.useImperial ? 'mi' : 'km';
   } else {
-    dom.locationBtn.textContent = 'Enable Location';
+    label = 'Location';
+    ovLabel = 'Enable Location';
     dom.unitBtn.style.display = 'none';
   }
+  dom.locationBtn.textContent = label;
+  var ovBtn = document.getElementById('location-btn-ov');
+  if (ovBtn) ovBtn.textContent = ovLabel;
 }
 
 function toggleUnits() {
@@ -150,7 +158,10 @@ function toggleDensity() {
 }
 
 export function updateDensityBtn() {
-  dom.densityBtn.textContent = state.density === 'compact' ? 'Comfortable' : 'Compact';
+  var label = state.density === 'compact' ? 'Comfortable' : 'Compact';
+  dom.densityBtn.textContent = label;
+  var ovBtn = document.getElementById('density-btn-ov');
+  if (ovBtn) ovBtn.textContent = label;
 }
 
 // --- Column Reset ---
@@ -201,6 +212,12 @@ function handleKeydown(e) {
   }
 
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+  if (e.key === 'p' || e.key === 'P') {
+    e.preventDefault();
+    if (state.plannerOpen) { closePlanner(); } else { openPlanner(); }
+    return;
+  }
 
   var shows = state.filteredShows;
 
@@ -429,15 +446,18 @@ export function bindEvents() {
   // Column chooser: reset button
   $('#colchooser-reset').addEventListener('click', resetColumns);
 
-  // Column chooser: checkboxes (delegated)
-  $('#colchooser-list').addEventListener('change', function(e) {
+  // Column chooser: checkboxes (delegated) — works for both regular and overflow lists
+  function colChooserChange(e) {
     var input = e.target;
     if (input.type === 'checkbox' && input.dataset.key) {
       state.colVisible[input.dataset.key] = input.checked;
       lsSet(LS.columns, state.colVisible);
       renderAll();
     }
-  });
+  }
+  $('#colchooser-list').addEventListener('change', colChooserChange);
+  var ovColList = document.getElementById('overflow-colchooser-list');
+  if (ovColList) ovColList.addEventListener('change', colChooserChange);
 
   // Virtual scroll
   dom.main.addEventListener('scroll', function() {
@@ -500,18 +520,18 @@ export function bindEvents() {
   // Planner close button
   $('#planner-close').addEventListener('click', closePlanner);
 
-  // Planner date select
-  $('#planner-date-select').addEventListener('change', function() {
-    setPlanDate(this.value);
-  });
+  // Planner calendar: single-select date click (always-visible static calendar)
+  var plannerCal = document.getElementById('planner-cal');
+  if (plannerCal) {
+    plannerCal.addEventListener('click', function(e) {
+      var dayEl = e.target.closest('.cal-day.has-shows');
+      if (!dayEl || !dayEl.dataset.iso) return;
+      setPlanDate(dayEl.dataset.iso);
+    });
+  }
 
-  // Planner clear
-  $('#planner-clear').addEventListener('click', function() {
-    state.plan = [];
-    lsSet(LS.plan, []);
-    renderPlanner();
-    requestFilter(false);
-  });
+  // Planner clear (clears current day only)
+  $('#planner-clear').addEventListener('click', clearDayPlan);
 
   // Planner row buttons (plan add/remove — event delegation on tbody)
   dom.tbody.addEventListener('click', function(e) {
@@ -521,7 +541,7 @@ export function bindEvents() {
     var showId = parseInt(btn.dataset.showId);
     if (btn.classList.contains('planned')) {
       removeFromPlan(showId);
-    } else if (btn.classList.contains('add')) {
+    } else if (btn.classList.contains('add') || btn.classList.contains('warn')) {
       addToPlan(showId);
     }
   });
@@ -542,4 +562,44 @@ export function bindEvents() {
       else if (action === 'clear') clearDates();
     }
   });
+
+  // Overflow menu button
+  var overflowBtn = document.getElementById('overflow-btn');
+  if (overflowBtn) {
+    overflowBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      state.overflowOpen = !state.overflowOpen;
+      state.calendarOpen = false;
+      state.colChooserOpen = false;
+      state.exportOpen = false;
+      state.priceOpen = false;
+      updateDropdowns();
+    });
+  }
+
+  // Overflow: density button
+  var ovDensityBtn = document.getElementById('density-btn-ov');
+  if (ovDensityBtn) {
+    ovDensityBtn.addEventListener('click', function() {
+      toggleDensity();
+      state.overflowOpen = false;
+      updateDropdowns();
+    });
+  }
+
+  // Overflow: column reset
+  var ovColReset = document.getElementById('colchooser-reset-ov');
+  if (ovColReset) {
+    ovColReset.addEventListener('click', resetColumns);
+  }
+
+  // Overflow: location button
+  var ovLocationBtn = document.getElementById('location-btn-ov');
+  if (ovLocationBtn) {
+    ovLocationBtn.addEventListener('click', function() {
+      state.overflowOpen = false;
+      updateDropdowns();
+      requestLocation();
+    });
+  }
 }

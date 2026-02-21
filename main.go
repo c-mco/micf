@@ -117,9 +117,13 @@ SCRAPE DETAILS
 WEB UI
     The UI is a spreadsheet-style table of all MICF shows.
     Columns can be shown/hidden, sorted, and filtered.
-    The Dates picker, Free button, and Price filter are in the header.
-    The Day Planner (Planner button) lets you build a schedule for one day
-    with travel-time conflict detection between venues.
+    Header controls: Search, Free toggle, Price range, Date picker, Planner.
+    At narrow widths (≤960px) Columns/Export/Density collapse into a ··· menu.
+
+    The Day Planner (Planner button or P key) lets you pick a date and build
+    a schedule. Shows are sorted by session time automatically. A Time column
+    appears in the grid. Conflict detection uses Haversine distance between
+    venues (12 min/km walking, minimum 10 min gap).
 
 EXPORTS
     /export/json    All data as JSON
@@ -231,10 +235,11 @@ The UI is a spreadsheet-style table of all MICF shows with sortable,
 filterable columns. Filtering tools include: full-text search, a date
 picker calendar, a free-shows toggle, and a price range filter.
 .PP
-The Day Planner (\fIPlanner\fR button) lets you select a date, browse
-shows scheduled that day, and add them to a plan. Conflict detection
-uses Haversine distance between venues and assumes 12 minutes per
-kilometre walking time with a 10-minute minimum.
+The Day Planner (\fIPlanner\fR button, or press \fBP\fR) lets you pick a date and
+build a day schedule. A \fITime\fR column appears in the grid showing each show's
+session time, sorted automatically. Conflict detection uses Haversine distance
+between venues (12 min/km walking, 10-minute minimum gap). Travel time gaps are
+shown between plan items.
 .SH EXPORTS
 The following endpoints serve exported data:
 .IP /export/json

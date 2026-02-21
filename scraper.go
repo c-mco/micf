@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -14,6 +13,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+)
+
+// Compiled once at startup — used in every scrapeShowDetails call.
+var (
+	sessionRe = regexp.MustCompile(`(?s)window\.sessionData\s*=\s*(\[.*?\]);`)
+	durationRe = regexp.MustCompile(`window\.sessionDuration\s*=\s*'(\d+)'`)
+	tagRe      = regexp.MustCompile(`<li[^>]*class="show-page__tag[^"]*"[^>]*>([^<]+)</li>`)
+	priceRe    = regexp.MustCompile(`\$(\d+(?:\.\d{2})?)\s*[-–]\s*\$(\d+(?:\.\d{2})?)`)
+	cwRe       = regexp.MustCompile(`(?i)content\s+warning[s]?\s*:?\s*([^<]+)`)
 )
 
 // Shared HTTP client with connection pooling
@@ -100,6 +108,7 @@ type Session struct {
 	MaxPrice          float64 `json:"-"`
 	IsFreeShow        bool    `json:"-"`
 	TicketTypesJSON   string  `json:"-"`
+	VenueID           int     `json:"-"`
 }
 
 // TicketType represents one pricing tier from getsessiondetails
@@ -113,6 +122,7 @@ type TicketType struct {
 
 // SessionDetails is the response shape from showapi/getsessiondetails
 type SessionDetails struct {
+	Venue             Venue        `json:"venue"`
 	AvailabilityLevel string       `json:"availabilityLevel"`
 	AvailabilityPct   int          `json:"availabilityPercentage"`
 	TicketTypes       []TicketType `json:"ticketTypes"`
@@ -127,6 +137,7 @@ type ScrapeStats struct {
 // VenueStats tracks geocoding outcomes
 type VenueStats struct {
 	Total, Geocoded, Skipped, Failed int
+	Lines                            []string // buffered log lines, printed after progress
 }
 
 // BuildVenueLookup queries all venues and returns a name→id map
@@ -134,7 +145,7 @@ func BuildVenueLookup() map[string]int {
 	lookup := make(map[string]int)
 	rows, err := db.Query("SELECT id, name FROM venues")
 	if err != nil {
-		log.Printf("BuildVenueLookup error: %v", err)
+		fmt.Printf("❌ BuildVenueLookup: %v\n", err)
 		return lookup
 	}
 	defer rows.Close()
@@ -175,60 +186,69 @@ func ResolveVenueID(venueSummary string, lookup map[string]int) int {
 	return 0
 }
 
-// ScrapeAll orchestrates the full sync in 3 decoupled phases:
+// ScrapeAll orchestrates the full sync in 4 phases:
 // Phase 1: Fetch master list + start venue sync in parallel
-// Phase 2: Scrape show details immediately (don't wait for venues)
-// Phase 3: After both finish, resolve venue IDs and save to DB
+// Phase 2: Scrape show details with N concurrent workers
+// Phase 3: Resolve venue IDs and save to DB
+// Phase 4: Geocode any newly discovered session venues
 func ScrapeAll(numWorkers int, forceGeocode bool) {
 	start := time.Now()
 
-	// Phase 1: Kick off venue sync + fetch master list in parallel
-	var venueWg sync.WaitGroup
+	// Phase 1: Kick off venue sync + fetch master list in parallel.
+	// Use a channel so we can do a non-blocking check after shows finish.
+	venueDone := make(chan struct{})
 	var venueStats VenueStats
-	venueWg.Go(func() {
+	var venueElapsed time.Duration
+	go func() {
+		t := time.Now()
 		venueStats = FetchAndSaveVenues(forceGeocode)
-	})
+		venueElapsed = time.Since(t).Round(time.Second)
+		close(venueDone)
+	}()
 
 	fmt.Println("🛰️  Fetching master show list from MICF...")
 	shows, err := fetchMasterList()
 	if err != nil {
-		fmt.Printf("❌ Fatal Error: %v\n", err)
+		fmt.Printf("❌ Fatal: %v\n", err)
 		return
 	}
 	total := len(shows)
 	fmt.Printf("✅ Found %d shows. Firing up %d workers...\n", total, numWorkers)
 
-	// Phase 2: Scrape show details immediately (no waiting on venues)
+	// Phase 2: Scrape show details concurrently
 	type scrapeResult struct {
 		show     Show
 		sessions []Session
 	}
 	results := make([]scrapeResult, 0, total)
 	var resultsMu sync.Mutex
-	processed := 0
-	failed := 0
+	processed, failed := 0, 0
+	var failedShows []Show      // for retry + stale-detection protection
+	var sessionWarnings []string
 
 	jobs := make(chan Show, total)
 	var wg sync.WaitGroup
 
-	sessionRe := regexp.MustCompile(`(?s)window\.sessionData\s*=\s*(\[.*?\]);`)
-	durationRe := regexp.MustCompile(`window\.sessionDuration\s*=\s*'(\d+)'`)
-
+	scrapeStart := time.Now()
 	for w := 1; w <= numWorkers; w++ {
 		wg.Go(func() {
 			for show := range jobs {
-				sessions, err := scrapeShowDetails(&show, sessionRe, durationRe)
+				sessions, warns, err := scrapeShowDetails(&show)
 
 				resultsMu.Lock()
 				if err != nil {
 					failed++
-					log.Printf("Skipping %q: %v", show.Title, err)
+					failedShows = append(failedShows, show)
 				} else {
 					results = append(results, scrapeResult{show, sessions})
+					sessionWarnings = append(sessionWarnings, warns...)
 				}
 				processed++
-				fmt.Printf("\r🚀 Progress: [%d/%d] shows scraped (%.1f%%)...",
-					processed, total, float64(processed)/float64(total)*100)
+				fmt.Printf("\r🚀 [%d/%d] %.1f%% — %d failed — %v",
+					processed, total,
+					float64(processed)/float64(total)*100,
+					failed,
+					time.Since(scrapeStart).Round(time.Second))
 				resultsMu.Unlock()
 
 				time.Sleep(time.Duration(100+rand.Intn(200)) * time.Millisecond)
@@ -242,49 +262,224 @@ func ScrapeAll(numWorkers int, forceGeocode bool) {
 	close(jobs)
 	wg.Wait()
 
-	// Phase 3: Wait for venues, resolve IDs, and save
-	venueWg.Wait()
+	// ── Retries: fire concurrently so Phase 3 can start immediately ─────────
+	// All failed shows are retried in parallel (not sequentially), and the 5s
+	// delay between attempts overlaps with Phase 3 DB saves below.
+	type retryResult struct {
+		show     Show
+		sessions []Session
+		warns    []string
+	}
+	retryCh := make(chan retryResult, len(failedShows)+1)
+	var scrapeEndTime time.Time
+
+	if len(failedShows) > 0 {
+		toRetry := append([]Show(nil), failedShows...)
+		go func() {
+			for attempt := 1; attempt <= 2 && len(toRetry) > 0; attempt++ {
+				fmt.Printf("\n🔄 Retrying %d failed show(s) (attempt %d/2)...\n", len(toRetry), attempt)
+				time.Sleep(5 * time.Second)
+				var rWg sync.WaitGroup
+				type attemptRes struct {
+					show     Show
+					sessions []Session
+					warns    []string
+					ok       bool
+				}
+				ach := make(chan attemptRes, len(toRetry))
+				for _, s := range toRetry {
+					rWg.Add(1)
+					go func(show Show) {
+						defer rWg.Done()
+						sessions, warns, err := scrapeShowDetails(&show)
+						if err != nil {
+							ach <- attemptRes{show: show}
+						} else {
+							ach <- attemptRes{show, sessions, warns, true}
+						}
+					}(s)
+				}
+				rWg.Wait()
+				close(ach)
+				var next []Show
+				for r := range ach {
+					if !r.ok {
+						next = append(next, r.show)
+					} else {
+						retryCh <- retryResult{r.show, r.sessions, r.warns}
+					}
+				}
+				toRetry = next
+			}
+			failedShows = toRetry // write back permanently-failed shows
+			scrapeEndTime = time.Now()
+			close(retryCh)
+		}()
+	} else {
+		scrapeEndTime = time.Now()
+		close(retryCh)
+	}
+
+	// Phase 3: Wait for venues (print a message if still running), resolve IDs, save.
+	// Starts immediately — overlaps with the retry delay above.
+	saveStart := time.Now()
+	select {
+	case <-venueDone:
+	default:
+		fmt.Printf("\n⏳ Waiting for venue sync to finish...")
+		<-venueDone
+		fmt.Printf(" done (%v)\n", venueElapsed)
+	}
 	venueLookup := BuildVenueLookup()
 	existing := GetExistingShowData()
 
-	stats := ScrapeStats{Failed: failed}
+	type changeEntry struct{ show, detail string }
+	var newShows []string
+	var updatedShows []changeEntry
+	stats := ScrapeStats{}
 	scrapedIDs := make(map[int]bool)
 
-	for _, r := range results {
-		r.show.VenueSummary = strings.Join(r.show.Venues, ", ")
-		r.show.VenueID = ResolveVenueID(r.show.VenueSummary, venueLookup)
-		SaveShow(r.show, r.sessions)
-		scrapedIDs[r.show.ID] = true
+	saveOne := func(show Show, sessions []Session) {
+		show.VenueSummary = strings.Join(show.Venues, ", ")
+		show.VenueID = ResolveVenueID(show.VenueSummary, venueLookup)
+		if show.VenueID == 0 {
+			for _, sess := range sessions {
+				if sess.VenueID != 0 {
+					show.VenueID = sess.VenueID
+					break
+				}
+			}
+		}
+		SaveShow(show, sessions)
+		scrapedIDs[show.ID] = true
 
-		if snap, exists := existing[r.show.ID]; !exists {
+		label := fmt.Sprintf("%s — %s", show.Title, show.Artist)
+		if snap, exists := existing[show.ID]; !exists {
 			stats.New++
-		} else if snap.Title != r.show.Title || snap.Artist != r.show.Artist ||
-			snap.URL != r.show.URL || snap.VenueSummary != r.show.VenueSummary ||
-			snap.SessionCount != len(r.sessions) {
+			newShows = append(newShows, label)
+		} else if snap.Title != show.Title || snap.Artist != show.Artist ||
+			snap.URL != show.URL || snap.VenueSummary != show.VenueSummary ||
+			snap.SessionCount != len(sessions) {
 			stats.Updated++
+			var changes []string
+			if snap.Title != show.Title {
+				changes = append(changes, fmt.Sprintf("title: %q→%q", snap.Title, show.Title))
+			}
+			if snap.Artist != show.Artist {
+				changes = append(changes, fmt.Sprintf("artist: %q→%q", snap.Artist, show.Artist))
+			}
+			if snap.VenueSummary != show.VenueSummary {
+				changes = append(changes, fmt.Sprintf("venue: %q→%q", snap.VenueSummary, show.VenueSummary))
+			}
+			if snap.SessionCount != len(sessions) {
+				changes = append(changes, fmt.Sprintf("sessions: %d→%d", snap.SessionCount, len(sessions)))
+			}
+			updatedShows = append(updatedShows, changeEntry{label, strings.Join(changes, ", ")})
 		} else {
 			stats.Unchanged++
 		}
 	}
 
-	// Remove shows that no longer exist in the festival
+	for _, r := range results {
+		saveOne(r.show, r.sessions)
+	}
+
+	// Drain retry results — blocks until retry goroutine closes retryCh.
+	// By the time this loop exits, failedShows holds any permanently-failed shows.
+	for r := range retryCh {
+		saveOne(r.show, r.sessions)
+		sessionWarnings = append(sessionWarnings, r.warns...)
+	}
+
+	// Retries complete
+	failed = len(failedShows)
+	stats.Failed = failed
+	scrapeElapsed := scrapeEndTime.Sub(scrapeStart).Round(time.Second)
+
+	// Shows that failed scraping are NOT stale — don't delete them
+	failedIDs := make(map[int]bool, len(failedShows))
+	for _, s := range failedShows {
+		failedIDs[s.ID] = true
+	}
+
 	var staleIDs []int
 	for id := range existing {
-		if !scrapedIDs[id] {
+		if !scrapedIDs[id] && !failedIDs[id] {
 			staleIDs = append(staleIDs, id)
 		}
 	}
 	stats.Removed = RemoveStaleShows(staleIDs)
 	stats.Total = stats.New + stats.Updated + stats.Unchanged + stats.Failed
+	saveElapsed := time.Since(saveStart).Round(time.Second)
 
-	// Invalidate page cache so next request gets fresh data
+	// Phase 4: Geocode newly discovered session venues
+	geocodeStart := time.Now()
+	sessionVenueStats := GeocodeNewVenues(forceGeocode)
+	geocodeElapsed := time.Since(geocodeStart).Round(time.Second)
+
 	InvalidatePageCache()
 
-	fmt.Printf("\n\n🏁 Scrape completed in %v\n", time.Since(start).Round(time.Second))
-	fmt.Printf("📊 Shows: %d total — %d new, %d updated, %d unchanged, %d removed, %d failed\n",
+	// ── Output ────────────────────────────────────────────────────────────────
+	fmt.Printf("\n\n")
+
+	// Buffered geocoding details from FetchAndSaveVenues (ran in parallel — buffered to avoid interleaving)
+	if len(venueStats.Lines) > 0 {
+		for _, line := range venueStats.Lines {
+			fmt.Println(line)
+		}
+		fmt.Println()
+	}
+
+	// Shows that couldn't be scraped even after retries
+	if len(failedShows) > 0 {
+		fmt.Printf("⚠️  Skipped shows (%d — still in DB, not removed):\n", len(failedShows))
+		for _, s := range failedShows {
+			fmt.Printf("  ⚠️  %s — %s\n", s.Title, s.Artist)
+		}
+		fmt.Println()
+	}
+
+	// Session detail warnings
+	if len(sessionWarnings) > 0 {
+		fmt.Printf("⚠️  Session detail errors (%d shows affected):\n", len(sessionWarnings))
+		for _, w := range sessionWarnings {
+			fmt.Println(w)
+		}
+		fmt.Println()
+	}
+
+	// Summary
+	fmt.Printf("🏁 Scrape complete in %v\n", time.Since(start).Round(time.Second))
+	fmt.Printf("   Show scraping:  %v (incl. retries)\n", scrapeElapsed)
+	fmt.Printf("   Venue sync:     %v (parallel with scraping)\n", venueElapsed)
+	fmt.Printf("   DB save:        %v (parallel with retries)\n", saveElapsed)
+	if geocodeElapsed > 0 {
+		fmt.Printf("   Geocoding:      %v\n", geocodeElapsed)
+	}
+	fmt.Println()
+	fmt.Printf("📊 Shows:  %d total — %d new, %d updated, %d unchanged, %d removed, %d failed\n",
 		stats.Total, stats.New, stats.Updated, stats.Unchanged, stats.Removed, stats.Failed)
-	fmt.Printf("📍 Venues: %d synced — %d geocoded, %d skipped, %d failed\n",
+	fmt.Printf("📍 Venues: %d synced — %d geocoded, %d skipped, %d failed",
 		venueStats.Total, venueStats.Geocoded, venueStats.Skipped, venueStats.Failed)
+	if sessionVenueStats.Total > 0 {
+		fmt.Printf(" | sessions: %d new — %d geocoded, %d failed",
+			sessionVenueStats.Total, sessionVenueStats.Geocoded, sessionVenueStats.Failed)
+	}
+	fmt.Println()
+
+	if len(newShows) > 0 {
+		fmt.Printf("\n✨ New shows (%d):\n", len(newShows))
+		for _, s := range newShows {
+			fmt.Printf("   + %s\n", s)
+		}
+	}
+	if len(updatedShows) > 0 {
+		fmt.Printf("\n✏️  Updated shows (%d):\n", len(updatedShows))
+		for _, e := range updatedShows {
+			fmt.Printf("   ~ %s\n", e.show)
+			fmt.Printf("     %s\n", e.detail)
+		}
+	}
 }
 
 func FetchAndSaveVenues(forceGeocode bool) VenueStats {
@@ -306,6 +501,11 @@ func FetchAndSaveVenues(forceGeocode bool) VenueStats {
 		return stats
 	}
 
+	if forceGeocode {
+		// Clear geocode_attempted so GeocodeNewVenues will retry session venues too
+		db.Exec("UPDATE venues SET geocode_attempted = 0")
+	}
+
 	geocoded := GetGeocodedVenueIDs()
 	stats.Total = len(data.Venues)
 
@@ -323,9 +523,10 @@ func FetchAndSaveVenues(forceGeocode bool) VenueStats {
 			data.Venues[i].Longitude = lng
 			SaveVenue(data.Venues[i])
 			if lat != 0 {
-				fmt.Printf("  📍 %s → %.4f, %.4f\n", v.Name, lat, lng)
+				stats.Lines = append(stats.Lines, fmt.Sprintf("  📍 %s → %.4f, %.4f", v.Name, lat, lng))
 				stats.Geocoded++
 			} else {
+				stats.Lines = append(stats.Lines, fmt.Sprintf("  ❌ %s (geocode failed)", v.Name))
 				stats.Failed++
 			}
 			time.Sleep(1 * time.Second) // Nominatim rate limit: 1 req/sec
@@ -336,19 +537,23 @@ func FetchAndSaveVenues(forceGeocode bool) VenueStats {
 	return stats
 }
 
-// geocodeVenue uses Nominatim to resolve a venue address to lat/lng
+// geocodeVenue uses Nominatim structured search to resolve a venue address to lat/lng.
+// Using structured fields (street/city/state) instead of a free-form query avoids
+// matching streets in outer suburbs that share the same name.
 func geocodeVenue(v Venue) (float64, float64) {
 	if v.Address == "" {
 		return 0, 0
 	}
 
-	query := v.Address
+	city := "Melbourne"
 	if v.Suburb != "" {
-		query += ", " + v.Suburb
+		city = v.Suburb
 	}
-	query += ", Victoria, Australia"
 
-	apiURL := "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + url.QueryEscape(query)
+	apiURL := fmt.Sprintf(
+		"https://nominatim.openstreetmap.org/search?format=json&limit=1&street=%s&city=%s&state=Victoria&country=Australia",
+		url.QueryEscape(v.Address), url.QueryEscape(city),
+	)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return 0, 0
@@ -357,7 +562,6 @@ func geocodeVenue(v Venue) (float64, float64) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		log.Printf("Geocode error for %s: %v", v.Name, err)
 		return 0, 0
 	}
 	defer resp.Body.Close()
@@ -415,27 +619,27 @@ func fetchSessionDetails(showID, sessionID int, performanceRef string) (*Session
 	return &d, nil
 }
 
-func scrapeShowDetails(show *Show, sessionRe, durationRe *regexp.Regexp) ([]Session, error) {
+func scrapeShowDetails(show *Show) ([]Session, []string, error) {
 	fullURL := "https://www.comedyfestival.com.au" + show.URL
 	resp, err := httpClient.Get(fullURL)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	match := sessionRe.FindSubmatch(body)
 	if len(match) < 2 {
-		return nil, fmt.Errorf("no data")
+		return nil, nil, fmt.Errorf("no session data")
 	}
 
 	var sessions []Session
 	if err := json.Unmarshal(match[1], &sessions); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	bodyStr := string(body)
@@ -447,14 +651,12 @@ func scrapeShowDetails(show *Show, sessionRe, durationRe *regexp.Regexp) ([]Sess
 
 	// Description from <section class="rte">
 	if _, after, ok := strings.Cut(bodyStr, `<section class="rte">`); ok {
-		rest := after
-		if before, _, ok0 := strings.Cut(rest, "</section>"); ok0 {
+		if before, _, ok0 := strings.Cut(after, "</section>"); ok0 {
 			show.Description = strings.TrimSpace(before)
 		}
 	}
 
 	// Tags from <li class="show-page__tag">
-	tagRe := regexp.MustCompile(`<li[^>]*class="show-page__tag[^"]*"[^>]*>([^<]+)</li>`)
 	if tagMatches := tagRe.FindAllStringSubmatch(bodyStr, -1); len(tagMatches) > 0 {
 		var tags []string
 		for _, m := range tagMatches {
@@ -464,47 +666,94 @@ func scrapeShowDetails(show *Show, sessionRe, durationRe *regexp.Regexp) ([]Sess
 	}
 
 	// Price range (e.g. "$28 - $31")
-	priceRe := regexp.MustCompile(`\$(\d+(?:\.\d{2})?)\s*[-–]\s*\$(\d+(?:\.\d{2})?)`)
 	if pm := priceRe.FindString(bodyStr); pm != "" {
 		show.PriceRange = pm
 	}
 
 	// Content warnings
-	cwRe := regexp.MustCompile(`(?i)content\s+warning[s]?\s*:?\s*([^<]+)`)
 	if cm := cwRe.FindStringSubmatch(bodyStr); len(cm) >= 2 {
 		show.ContentWarnings = strings.TrimSpace(cm[1])
 	}
 
-	// Enrich sessions with pricing/availability from getsessiondetails API
-	for i := range sessions {
-		s := &sessions[i]
-		if s.SessionID == 0 || s.PerformanceRef == "" {
-			continue
-		}
-		details, err := fetchSessionDetails(show.ID, s.SessionID, s.PerformanceRef)
-		if err != nil {
-			log.Printf("Session detail error for %s/%d: %v", show.Title, s.SessionID, err)
-			continue
-		}
-		s.AvailabilityLevel = details.AvailabilityLevel
-		s.AvailabilityPct = details.AvailabilityPct
-		s.IsFreeShow = details.IsFreeShow
-		if len(details.TicketTypes) > 0 {
-			s.MinPrice = details.TicketTypes[0].Price
-			s.MaxPrice = details.TicketTypes[0].Price
-			for _, t := range details.TicketTypes[1:] {
-				if t.Price < s.MinPrice {
-					s.MinPrice = t.Price
-				}
-				if t.Price > s.MaxPrice {
-					s.MaxPrice = t.Price
-				}
-			}
-		}
-		if jsonBytes, err := json.Marshal(details.TicketTypes); err == nil {
-			s.TicketTypesJSON = string(jsonBytes)
+	// Enrich sessions with pricing/availability from getsessiondetails API.
+	// Fetch all sessions concurrently, bounded to 5 in-flight at a time.
+	type detailResult struct {
+		idx     int
+		details *SessionDetails
+	}
+
+	eligible := 0
+	for _, s := range sessions {
+		if s.SessionID != 0 && s.PerformanceRef != "" {
+			eligible++
 		}
 	}
 
-	return sessions, nil
+	var warns []string
+	if eligible > 0 {
+		detailCh := make(chan detailResult, eligible)
+		errCh := make(chan string, eligible)
+		sem := make(chan struct{}, 5)
+		var detailWg sync.WaitGroup
+
+		for i, s := range sessions {
+			if s.SessionID == 0 || s.PerformanceRef == "" {
+				continue
+			}
+			detailWg.Add(1)
+			sem <- struct{}{} // blocks when 5 goroutines are already running
+			go func(idx int, sess Session) {
+				defer detailWg.Done()
+				defer func() { <-sem }()
+				d, err := fetchSessionDetails(show.ID, sess.SessionID, sess.PerformanceRef)
+				if err != nil {
+					errCh <- fmt.Sprintf("session %d: %v", sess.SessionID, err)
+					return
+				}
+				detailCh <- detailResult{idx, d}
+			}(i, s)
+		}
+		detailWg.Wait()
+		close(detailCh)
+		close(errCh)
+
+		// Aggregate session errors into one warning per show
+		var errs []string
+		for e := range errCh {
+			errs = append(errs, e)
+		}
+		if len(errs) > 0 {
+			warns = append(warns, fmt.Sprintf("  ⚠️  %s — %s: %d session detail error(s)",
+				show.Title, show.Artist, len(errs)))
+		}
+
+		for r := range detailCh {
+			s := &sessions[r.idx]
+			d := r.details
+			s.AvailabilityLevel = d.AvailabilityLevel
+			s.AvailabilityPct = d.AvailabilityPct
+			s.IsFreeShow = d.IsFreeShow
+			if d.Venue.ID != 0 {
+				s.VenueID = d.Venue.ID
+				SaveVenueIfNew(d.Venue)
+			}
+			if len(d.TicketTypes) > 0 {
+				s.MinPrice = d.TicketTypes[0].Price
+				s.MaxPrice = d.TicketTypes[0].Price
+				for _, t := range d.TicketTypes[1:] {
+					if t.Price < s.MinPrice {
+						s.MinPrice = t.Price
+					}
+					if t.Price > s.MaxPrice {
+						s.MaxPrice = t.Price
+					}
+				}
+			}
+			if jsonBytes, err := json.Marshal(d.TicketTypes); err == nil {
+				s.TicketTypesJSON = string(jsonBytes)
+			}
+		}
+	}
+
+	return sessions, warns, nil
 }

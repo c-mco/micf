@@ -7,10 +7,12 @@ import { state, dom, LS, lsSet, getRowHeight, SCROLL_BUFFER } from './state.js';
 import { $, escapeHTML, distanceDisplay, distanceKmLocal, directionsUrl } from './utils.js';
 import { requestFilter } from './worker-bridge.js';
 import { refreshCalendarSelection } from './calendar.js';
-import { conflictInfo } from './planner.js';
+import { conflictInfo, conflictReason } from './planner.js';
 
 export function getVisibleColumns() {
   return COLUMNS.filter(function(c) {
+    // PlanTime column: only visible when planner is open with a date selected
+    if (c.key === 'PlanTime') return state.plannerOpen && !!state.planDate;
     if (c.key === 'Distance' && !state.userLat) return false;
     return state.colVisible[c.key];
   });
@@ -148,15 +150,25 @@ function renderCell(col, show) {
       if (isPlanned) {
         planBtn = '<button class="plan-row-btn planned" data-show-id="' + show.ID + '" title="Remove from plan">\u2713</button>';
       } else if (sess) {
-        var conflict = conflictInfo(sess, state.plan);
-        if (conflict) {
-          planBtn = '<button class="plan-row-btn conflict" data-show-id="' + show.ID + '" title="Conflicts with ' + escapeHTML(conflict.title) + '">\u2717</button>';
+        if (sess.isSoldOut) {
+          planBtn = '<span class="plan-row-soldout" title="Sold out">\u2013</span>';
         } else {
-          planBtn = '<button class="plan-row-btn add" data-show-id="' + show.ID + '" title="Add to plan">+</button>';
+          var details = conflictInfo(sess, state.plan);
+          if (details) {
+            var reason = conflictReason(details);
+            planBtn = '<button class="plan-row-btn warn" data-show-id="' + show.ID + '" title="' + escapeHTML(reason) + '">\u26a0+</button>';
+          } else {
+            planBtn = '<button class="plan-row-btn add" data-show-id="' + show.ID + '" title="Add to plan">+</button>';
+          }
         }
       }
     }
     return planBtn + '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank" class="cell-title">' + escapeHTML(show.Title) + '</a>';
+  }
+  if (key === 'PlanTime') {
+    var sess = state.plannerDateSessions[show.ID];
+    if (!sess || !sess.time) return '';
+    return '<span class="plan-time-cell">' + escapeHTML(sess.time) + '</span>';
   }
   if (key === 'Distance') {
     var d = distanceDisplay(show, state);
@@ -247,6 +259,16 @@ function renderDetailRow(show, colCount) {
     '</div></div></div></td></tr>';
 }
 
+var SESSION_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+var SESSION_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatSessionDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso + 'T00:00:00');
+  if (isNaN(d.getTime())) return iso;
+  return SESSION_DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + SESSION_MONTHS[d.getMonth()];
+}
+
 export function renderSessionTable(sessions) {
   if (!sessions || sessions.length === 0) return '<div class="detail-loading">No sessions found</div>';
 
@@ -283,7 +305,7 @@ export function renderSessionTable(sessions) {
     }
 
     return '<tr' + rowClass + '>' +
-      '<td>' + escapeHTML(s.Date) + '</td>' +
+      '<td>' + formatSessionDate(s.Date) + '</td>' +
       '<td>' + escapeHTML(s.Time) + '</td>' +
       '<td>' + statusBadge + '</td>' +
       '<td>' + priceCell + '</td>' +
@@ -414,6 +436,8 @@ export function renderColumnChooser() {
     html += '</div>';
   });
   $('#colchooser-list').innerHTML = html;
+  var ovList = document.getElementById('overflow-colchooser-list');
+  if (ovList) ovList.innerHTML = html;
 }
 
 export function updateSearchClear() {

@@ -7,8 +7,9 @@ import { state, dom, LS, lsGet, lsSet, lsGetRaw } from './state.js';
 import { $ } from './utils.js';
 import { renderAll, updateSearchClear } from './render.js';
 import { bindEvents, updateLocationBtn, updateDensityBtn } from './events.js';
-import { buildCalendar, updateDateBtn } from './calendar.js';
+import { buildCalendar, updateDateBtn, renderPlannerCal } from './calendar.js';
 import { initWorker, requestFilter, registerSW } from './worker-bridge.js';
+import { initPlannerUI } from './planner.js';
 
 function init() {
   // Grab embedded data
@@ -33,8 +34,9 @@ function init() {
   state.showFreeOnly = lsGet(LS.freeOnly, false);
   state.priceMin = lsGet(LS.priceMin, 0) || 0;
   state.priceMax = lsGet(LS.priceMax, 0) || 0;
-  state.plan = lsGet(LS.plan, []);
-  state.planDate = lsGetRaw(LS.planDate, '');
+  state.plans = lsGet(LS.plans, {});
+  state.planDate = lsGet(LS.planDate, '') || '';
+  state.plan = state.plans[state.planDate] || [];
 
   // Column visibility
   var defaultVis = {};
@@ -117,6 +119,8 @@ function init() {
 
   // Render structure first so headers are visible before data arrives
   renderAll();
+  // Initialise planner UI (badge, date button, empty timeline)
+  initPlannerUI();
   // Then apply initial filter (may trigger worker if ready, otherwise sync)
   requestFilter(false);
 
@@ -129,7 +133,13 @@ function init() {
   // Fetch calendar data
   fetch('/api/dates')
     .then(function(r) { return r.json(); })
-    .then(function(data) { buildCalendar(data); })
+    .then(function(data) {
+      buildCalendar(data);
+      // Re-render planner calendar if it's already open
+      if (state.plannerOpen) {
+        renderPlannerCal();
+      }
+    })
     .catch(function() {});
 }
 

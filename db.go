@@ -2,7 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -133,6 +135,12 @@ func InitDB(path string) {
 	db.Exec("ALTER TABLE sessions ADD COLUMN is_free_show BOOLEAN")
 	db.Exec("ALTER TABLE sessions ADD COLUMN ticket_types_json TEXT")
 
+	// Sessions: venue_id from getsessiondetails (room-level, more specific than show.venue_id)
+	db.Exec("ALTER TABLE sessions ADD COLUMN venue_id INTEGER")
+
+	// Venues: track whether geocoding has been attempted to avoid re-hitting Nominatim every scrape
+	db.Exec("ALTER TABLE venues ADD COLUMN geocode_attempted BOOLEAN")
+
 	// 4. History tables for change tracking
 	db.Exec(`CREATE TABLE IF NOT EXISTS session_history (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,7 +174,7 @@ func InitDB(path string) {
 	// This allows the scraper to write while you read the UI on your Mac Mini
 	_, err = db.Exec("PRAGMA journal_mode=WAL;")
 	if err != nil {
-		log.Printf("Could not enable WAL: %v", err)
+		fmt.Printf("⚠️  WAL mode: %v\n", err)
 	}
 }
 
@@ -181,7 +189,7 @@ func GetGeocodedVenueIDs() map[int]bool {
 	result := make(map[int]bool)
 	rows, err := db.Query("SELECT id FROM venues WHERE latitude != 0 AND longitude != 0")
 	if err != nil {
-		log.Printf("Error querying geocoded venues: %v", err)
+		fmt.Printf("❌ GetGeocodedVenueIDs: %v\n", err)
 		return result
 	}
 	defer rows.Close()
@@ -211,7 +219,7 @@ func GetExistingShowData() map[int]ShowSnapshot {
 		(SELECT COUNT(*) FROM sessions WHERE show_id = s.id)
 		FROM shows s`)
 	if err != nil {
-		log.Printf("Error querying existing shows: %v", err)
+		fmt.Printf("❌ GetExistingShowData: %v\n", err)
 		return result
 	}
 	defer rows.Close()
@@ -232,7 +240,7 @@ func RemoveStaleShows(ids []int) int {
 	}
 	tx, err := db.Begin()
 	if err != nil {
-		log.Printf("Error starting removal transaction: %v", err)
+		fmt.Printf("❌ RemoveStaleShows tx: %v\n", err)
 		return 0
 	}
 	defer tx.Rollback()
@@ -247,7 +255,7 @@ func RemoveStaleShows(ids []int) int {
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		log.Printf("Error committing removal: %v", err)
+		fmt.Printf("❌ RemoveStaleShows commit: %v\n", err)
 		return 0
 	}
 	return count
@@ -257,7 +265,7 @@ func RemoveStaleShows(ids []int) int {
 func SaveShow(show Show, sessions []Session) {
 	tx, err := db.Begin()
 	if err != nil {
-		log.Printf("Error starting transaction for %s: %v", show.Title, err)
+		fmt.Printf("❌ SaveShow tx (%s): %v\n", show.Title, err)
 		return
 	}
 	defer tx.Rollback()
@@ -265,22 +273,22 @@ func SaveShow(show Show, sessions []Session) {
 	_, err = tx.Exec(`INSERT OR REPLACE INTO shows (id, title, artist, url, venue_summary, dates, show_count, image_url, small_image_url, online_show, on_demand_show, status, venue_id, large_image_url, description, duration, content_warnings, price_range, tags, guide_image_url, video_embed_url, red61_show_id, availability_level, sorting_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		show.ID, show.Title, show.Artist, show.URL, show.VenueSummary, show.Dates, show.ShowCount, show.ImageURL, show.SmallImageURL, show.OnlineShow, show.OnDemandShow, show.Status, show.VenueID, show.LargeImageURL, show.Description, show.Duration, show.ContentWarnings, show.PriceRange, show.Tags, show.GuideImageURL, show.VideoEmbedURL, show.Red61ShowID, show.AvailabilityLevel, show.SortingTitle)
 	if err != nil {
-		log.Printf("Error saving show %s: %v", show.Title, err)
+		fmt.Printf("❌ SaveShow insert (%s): %v\n", show.Title, err)
 		return
 	}
 
 	_, err = tx.Exec("DELETE FROM sessions WHERE show_id = ?", show.ID)
 	if err != nil {
-		log.Printf("Error clearing sessions for %s: %v", show.Title, err)
+		fmt.Printf("❌ SaveShow clear sessions (%s): %v\n", show.Title, err)
 		return
 	}
 
 	for _, s := range sessions {
-		_, err := tx.Exec(`INSERT INTO sessions (show_id, date, time, full_date, is_tight_arse, is_sold_out, cancelled, session_id, status, preview, laugh_pack, extra_show, has_sign_interpreter, show_type, is_filmed, is_relaxed, performance_ref, availability_level, availability_percentage, min_price, max_price, is_free_show, ticket_types_json)
-						  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			show.ID, s.Date, s.Time, s.FullDate, s.IsTightArse, s.IsSoldOut, s.Cancelled, s.SessionID, s.Status, s.Preview, s.LaughPack, s.ExtraShow, s.HasSignInterpreter, s.ShowType, s.IsFilmed, s.IsRelaxed, s.PerformanceRef, s.AvailabilityLevel, s.AvailabilityPct, s.MinPrice, s.MaxPrice, s.IsFreeShow, s.TicketTypesJSON)
+		_, err := tx.Exec(`INSERT INTO sessions (show_id, date, time, full_date, is_tight_arse, is_sold_out, cancelled, session_id, status, preview, laugh_pack, extra_show, has_sign_interpreter, show_type, is_filmed, is_relaxed, performance_ref, availability_level, availability_percentage, min_price, max_price, is_free_show, ticket_types_json, venue_id)
+						  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			show.ID, s.Date, s.Time, s.FullDate, s.IsTightArse, s.IsSoldOut, s.Cancelled, s.SessionID, s.Status, s.Preview, s.LaughPack, s.ExtraShow, s.HasSignInterpreter, s.ShowType, s.IsFilmed, s.IsRelaxed, s.PerformanceRef, s.AvailabilityLevel, s.AvailabilityPct, s.MinPrice, s.MaxPrice, s.IsFreeShow, s.TicketTypesJSON, s.VenueID)
 		if err != nil {
-			log.Printf("Error saving session for %s: %v", show.Title, err)
+			fmt.Printf("❌ SaveShow session (%s): %v\n", show.Title, err)
 			return
 		}
 	}
@@ -314,7 +322,7 @@ func SaveShow(show Show, sessions []Session) {
 		show.ID, show.Status, show.AvailabilityLevel)
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("Error committing show %s: %v", show.Title, err)
+		fmt.Printf("❌ SaveShow commit (%s): %v\n", show.Title, err)
 	}
 }
 
@@ -327,7 +335,7 @@ func BackfillVenueIDs() {
 
 	rows, err := db.Query("SELECT id, venue_summary FROM shows WHERE venue_id IS NULL OR venue_id = 0")
 	if err != nil {
-		log.Printf("BackfillVenueIDs query error: %v", err)
+		fmt.Printf("❌ BackfillVenueIDs query: %v\n", err)
 		return
 	}
 	defer rows.Close()
@@ -350,7 +358,7 @@ func BackfillVenueIDs() {
 
 	tx, err := db.Begin()
 	if err != nil {
-		log.Printf("BackfillVenueIDs tx error: %v", err)
+		fmt.Printf("❌ BackfillVenueIDs tx: %v\n", err)
 		return
 	}
 	defer tx.Rollback()
@@ -365,12 +373,71 @@ func BackfillVenueIDs() {
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("BackfillVenueIDs commit error: %v", err)
+		fmt.Printf("❌ BackfillVenueIDs commit: %v\n", err)
 		return
 	}
 	if count > 0 {
-		log.Printf("Backfilled venue_id for %d shows", count)
+		fmt.Printf("  Backfilled venue_id for %d shows\n", count)
 	}
+}
+
+// SaveVenueIfNew inserts a venue only if it doesn't already exist.
+// Used for session-level venues so we never overwrite existing geocoded data.
+func SaveVenueIfNew(v Venue) {
+	_, err := db.Exec(`INSERT OR IGNORE INTO venues
+		(id, name, address, suburb, location, capacity, wheelchair_access, disabled_toilets, website,
+		phone_number, accessibility_details, adults_only, assisted_hearing, box_office, booking_phone_number)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		v.ID, v.Name, v.Address, v.Suburb, v.Location, v.Capacity, v.WheelchairAccess, v.DisabledToilets, v.Website,
+		v.PhoneNumber, v.AccessibilityDetails, v.AdultsOnly, v.AssistedHearing, v.BoxOffice, v.BookingPhoneNumber)
+	if err != nil {
+		fmt.Printf("❌ SaveVenueIfNew (%s): %v\n", v.Name, err)
+	}
+}
+
+// GeocodeNewVenues geocodes venues that have an address but no coordinates and haven't
+// been attempted yet. Sets geocode_attempted=1 on each attempt so failures aren't
+// retried on every scrape. Pass force=true to retry all ungeocoded venues regardless.
+func GeocodeNewVenues(force bool) VenueStats {
+	query := `SELECT id, name, address, suburb, location FROM venues
+		WHERE (latitude IS NULL OR latitude = 0) AND address != ''`
+	if !force {
+		query += ` AND (geocode_attempted IS NULL OR geocode_attempted = 0)`
+	}
+	rows, err := db.Query(query)
+	if err != nil {
+		fmt.Printf("❌ GeocodeNewVenues query: %v\n", err)
+		return VenueStats{}
+	}
+	defer rows.Close()
+
+	var venues []Venue
+	for rows.Next() {
+		var v Venue
+		if err := rows.Scan(&v.ID, &v.Name, &v.Address, &v.Suburb, &v.Location); err == nil {
+			venues = append(venues, v)
+		}
+	}
+
+	stats := VenueStats{Total: len(venues)}
+	if len(venues) == 0 {
+		return stats
+	}
+	fmt.Printf("🔍 Geocoding %d session venue(s)...\n", len(venues))
+	for i, v := range venues {
+		lat, lng := geocodeVenue(v)
+		if lat != 0 {
+			db.Exec("UPDATE venues SET latitude = ?, longitude = ?, geocode_attempted = 1 WHERE id = ?", lat, lng, v.ID)
+			fmt.Printf("  📍 [%d/%d] %s → %.4f, %.4f\n", i+1, len(venues), v.Name, lat, lng)
+			stats.Geocoded++
+		} else {
+			db.Exec("UPDATE venues SET geocode_attempted = 1 WHERE id = ?", v.ID)
+			fmt.Printf("  ❌ [%d/%d] %s (geocode failed)\n", i+1, len(venues), v.Name)
+			stats.Failed++
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return stats
 }
 
 // SaveVenue persists the rich venue metadata from the Venues API
@@ -383,6 +450,6 @@ func SaveVenue(v Venue) {
 	_, err := db.Exec(query, v.ID, v.Name, v.Address, v.Suburb, v.Location, v.Capacity, v.WheelchairAccess, v.DisabledToilets, v.Website, v.Latitude, v.Longitude,
 		v.PhoneNumber, v.AccessibilityDetails, v.AdultsOnly, v.AssistedHearing, v.BoxOffice, v.BookingPhoneNumber)
 	if err != nil {
-		log.Printf("Error saving venue %s: %v", v.Name, err)
+		fmt.Printf("❌ SaveVenue (%s): %v\n", v.Name, err)
 	}
 }

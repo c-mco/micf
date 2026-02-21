@@ -386,7 +386,8 @@ func handleSessionsByDate(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query(`
 		SELECT s.id, s.title, s.artist, s.url, COALESCE(s.small_image_url, ''),
 		       COALESCE(s.duration, 60),
-		       COALESCE(v.name, ''), COALESCE(v.latitude, 0), COALESCE(v.longitude, 0),
+		       COALESCE(sv.name, v.name, ''),
+		       COALESCE(sv.latitude, v.latitude, 0), COALESCE(sv.longitude, v.longitude, 0),
 		       COALESCE(sess.session_id, 0), COALESCE(sess.time, ''), COALESCE(sess.full_date, ''),
 		       COALESCE(sess.min_price, 0), COALESCE(sess.max_price, 0),
 		       COALESCE(sess.is_free_show, 0), COALESCE(sess.is_sold_out, 0),
@@ -394,6 +395,7 @@ func handleSessionsByDate(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(sess.availability_percentage, 0)
 		FROM shows s
 		JOIN sessions sess ON s.id = sess.show_id
+		LEFT JOIN venues sv ON sess.venue_id = sv.id
 		LEFT JOIN venues v ON s.venue_id = v.id
 		WHERE sess.date = ? AND COALESCE(sess.cancelled, 0) = 0
 		ORDER BY sess.full_date ASC`, date)

@@ -688,8 +688,8 @@ th.sortable:hover .sort-indicator { opacity: 0.4; }
 .plan-row-btn.add:hover { background: #d1fae5; }
 .plan-row-btn.planned { color: var(--primary); border-color: #93c5fd; background: #dbeafe; }
 .plan-row-btn.planned:hover { background: #bfdbfe; }
-.plan-row-btn.conflict { color: var(--red); border-color: #fca5a5; }
-.plan-row-btn.conflict:hover { background: #fee2e2; }
+.plan-row-btn.warn { color: #92400e; border-color: #fcd34d; font-size: 9px; }
+.plan-row-btn.warn:hover { background: #fef3c7; }
 
 /* --- Planner Panel --- */
 .planner-panel {
@@ -720,16 +720,7 @@ th.sortable:hover .sort-indicator { opacity: 0.4; }
   flex-shrink: 0;
 }
 .planner-title { font-weight: 700; font-size: 13px; flex-shrink: 0; }
-.planner-date-select {
-  flex: 1;
-  background: #334155;
-  color: #e2e8f0;
-  border: 1px solid #475569;
-  border-radius: var(--radius);
-  padding: 3px 6px;
-  font-size: 11px;
-  outline: none;
-}
+
 .planner-close {
   background: none;
   border: none;
@@ -757,7 +748,7 @@ th.sortable:hover .sort-indicator { opacity: 0.4; }
   margin-bottom: 6px;
   background: var(--bg);
 }
-.planner-item.planner-conflict { border-color: #fca5a5; background: #fff5f5; }
+.planner-item.planner-conflict { border-color: #fcd34d; background: #fffbeb; }
 .planner-item-time {
   font-size: 11px;
   font-weight: 700;
@@ -807,3 +798,172 @@ th.sortable:hover .sort-indicator { opacity: 0.4; }
   padding: 0;
 }
 .planner-clear-btn:hover { text-decoration: underline; }
+
+/* --- Planner Calendar (static, always visible) --- */
+.planner-cal {
+  border-bottom: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: 260px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.planner-cal .cal-day.plan-selected {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.planner-cal .cal-day.plan-selected:hover { background: var(--primary-hover); }
+.planner-cal .cal-day.plan-has-items::after {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--primary);
+  margin: 1px auto 0;
+}
+.planner-cal .cal-day.plan-selected.plan-has-items::after { background: #fff; }
+/* Hide day counts and actions in planner cal — keep it compact */
+.planner-cal .day-count,
+.planner-cal .cal-help,
+.planner-cal .cal-actions { display: none; }
+
+/* --- Travel Gaps --- */
+.planner-gap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  color: var(--text-light);
+  font-size: 10px;
+}
+.planner-gap.gap-conflict { color: #92400e; }
+.planner-gap-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.planner-gap.gap-conflict .planner-gap-line { background: #fcd34d; }
+.planner-gap-label { white-space: nowrap; flex-shrink: 0; }
+
+/* --- Session time column (planner mode) --- */
+.plan-time-cell {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* --- Sold-out placeholder in plan row --- */
+.plan-row-soldout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-light);
+  font-size: 14px;
+  margin-right: 4px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* --- Overflow Menu --- */
+#overflow-wrap { display: none; }
+.overflow-panel {
+  width: 220px;
+  max-height: 480px;
+  overflow-y: auto;
+  right: 0;
+}
+.overflow-section {
+  padding: 6px 10px;
+}
+.overflow-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-light);
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.overflow-reset-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 10px;
+  text-transform: none;
+  font-weight: normal;
+  cursor: pointer;
+  padding: 0;
+}
+.overflow-reset-link:hover { text-decoration: underline; }
+.overflow-sep {
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+.overflow-item-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.overflow-item-btn:hover { background: var(--hover-bg); }
+.overflow-item-link {
+  display: block;
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--primary);
+  text-decoration: none;
+}
+.overflow-item-link:hover { text-decoration: underline; }
+.overflow-colchooser {
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+/* --- Responsive breakpoints --- */
+
+/* At ≤960px: collapse Columns/Export/Density into overflow */
+@media (max-width: 960px) {
+  .hide-overflow { display: none !important; }
+  #overflow-wrap { display: block; }
+  .search-input { width: 200px; }
+}
+
+/* At ≤768px: planner becomes a bottom sheet */
+@media (max-width: 768px) {
+  .search-input { width: 160px; }
+  .planner-panel {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 65vh;
+    transform: translateY(105%);
+    border-left: none;
+    border-top: 2px solid var(--border-dark);
+    border-radius: 12px 12px 0 0;
+  }
+  .planner-panel.open { transform: translateY(0); }
+  .main.planner-offset {
+    padding-right: 0;
+    padding-bottom: 65vh;
+  }
+}
+
+/* At ≤480px: search shrinks with page */
+@media (max-width: 480px) {
+  .search-wrap { flex: 1 1 100px; min-width: 0; }
+  .search-input { width: 100%; }
+}

@@ -76,6 +76,7 @@ func setupTestDB(t *testing.T) {
 		"ALTER TABLE sessions ADD COLUMN max_price REAL",
 		"ALTER TABLE sessions ADD COLUMN is_free_show BOOLEAN",
 		"ALTER TABLE sessions ADD COLUMN ticket_types_json TEXT",
+		"ALTER TABLE sessions ADD COLUMN venue_id INTEGER",
 	}
 	for _, m := range migrations {
 		db.Exec(m) // ignore errors (column may already exist)

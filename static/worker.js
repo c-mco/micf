@@ -21,7 +21,7 @@ self.onmessage = function(e) {
   }
 
   if (msg.type === 'query') {
-    sortShows(shows, msg.sortKey, msg.sortAsc, msg.userLat, msg.userLng);
+    sortShows(shows, msg.sortKey, msg.sortAsc, msg.userLat, msg.userLng, msg.plannerTimes);
     var result = filterShows(shows, {
       searchQuery: msg.searchQuery,
       selectedDates: msg.selectedDates,

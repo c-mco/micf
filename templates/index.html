@@ -39,8 +39,8 @@
     </div>
 
     <!-- Location -->
-    <button id="location-btn" class="toolbar-btn">Enable Location</button>
-    <button id="unit-btn" class="unit-btn hidden">km</button>
+    <button id="location-btn" class="toolbar-btn hide-overflow">Location</button>
+    <button id="unit-btn" class="unit-btn hidden hide-overflow">km</button>
 
     <!-- Calendar -->
     <div class="dropdown-wrap">
@@ -50,8 +50,11 @@
       </div>
     </div>
 
-    <!-- Column chooser -->
-    <div class="dropdown-wrap">
+    <!-- Day Planner -->
+    <button id="planner-btn" class="toolbar-btn">Planner</button>
+
+    <!-- Column chooser (hidden at narrow widths) -->
+    <div class="dropdown-wrap hide-overflow">
       <button id="colchooser-btn" class="toolbar-btn">Columns</button>
       <div id="colchooser-panel" class="dropdown-panel colchooser-panel">
         <div class="dropdown-header">
@@ -62,8 +65,8 @@
       </div>
     </div>
 
-    <!-- Export -->
-    <div class="dropdown-wrap">
+    <!-- Export (hidden at narrow widths) -->
+    <div class="dropdown-wrap hide-overflow">
       <button id="export-btn" class="toolbar-btn">Export</button>
       <div id="export-panel" class="dropdown-panel export-panel">
         <div class="dropdown-header"><span>Export Data</span></div>
@@ -86,11 +89,37 @@
       </div>
     </div>
 
-    <!-- Day Planner -->
-    <button id="planner-btn" class="toolbar-btn">Planner</button>
+    <!-- Density (hidden at narrow widths) -->
+    <button id="density-btn" class="toolbar-btn hide-overflow">Comfortable</button>
 
-    <!-- Density -->
-    <button id="density-btn" class="toolbar-btn">Comfortable</button>
+    <!-- Overflow menu (shown at narrow widths) -->
+    <div class="dropdown-wrap" id="overflow-wrap">
+      <button id="overflow-btn" class="toolbar-btn">&middot;&middot;&middot;</button>
+      <div id="overflow-panel" class="dropdown-panel overflow-panel">
+        <div class="overflow-section">
+          <div class="overflow-section-label">Layout</div>
+          <button id="density-btn-ov" class="overflow-item-btn">Comfortable</button>
+        </div>
+        <div class="overflow-sep"></div>
+        <div class="overflow-section">
+          <div class="overflow-section-label">Columns <button id="colchooser-reset-ov" class="overflow-reset-link">Reset</button></div>
+          <div id="overflow-colchooser-list" class="overflow-colchooser"></div>
+        </div>
+        <div class="overflow-sep"></div>
+        <div class="overflow-section">
+          <div class="overflow-section-label">Export</div>
+          <a href="/export/json" download class="overflow-item-link">JSON</a>
+          <a href="/export/csv" download class="overflow-item-link">CSV (ZIP)</a>
+          <a href="/export/excel" download class="overflow-item-link">Excel (.xlsx)</a>
+          <a href="/export/db" download class="overflow-item-link">SQLite DB</a>
+        </div>
+        <div class="overflow-sep"></div>
+        <div class="overflow-section">
+          <div class="overflow-section-label">Location</div>
+          <button id="location-btn-ov" class="overflow-item-btn">Enable Location</button>
+        </div>
+      </div>
+    </div>
   </header>
 
   <!-- Table -->
@@ -110,24 +139,22 @@
     <span id="footer-count" class="footer-count"></span>
     <span id="footer-total" class="footer-total" style="display:none"></span>
     <div id="footer-pills" class="footer-pills"></div>
-    <span class="footer-hint">Press <kbd>/</kbd> to search</span>
+    <span class="footer-hint">Press <kbd>/</kbd> to search &bull; <kbd>P</kbd> for planner</span>
   </footer>
 
   <!-- Day Planner panel -->
   <div id="planner-panel" class="planner-panel">
     <div class="planner-header">
       <span class="planner-title">Day Plan</span>
-      <select id="planner-date-select" class="planner-date-select"></select>
       <button id="planner-close" class="planner-close">&times;</button>
     </div>
+    <div id="planner-cal" class="planner-cal"></div>
     <div id="planner-timeline" class="planner-timeline"></div>
     <div class="planner-footer">
       <span id="planner-summary" class="planner-summary"></span>
       <button id="planner-clear" class="planner-clear-btn">Clear</button>
     </div>
   </div>
-
-  <!-- Planner open button (in header, added via JS) -->
 
   <!-- Embedded show data from server -->
   <script>

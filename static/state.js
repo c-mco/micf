@@ -19,7 +19,7 @@ export var LS = {
   priceMin: 'micf_price_min',
   priceMax: 'micf_price_max',
   planDate: 'micf_plan_date',
-  plan:     'micf_plan',
+  plans:    'micf_plans',   // map of date → [PlannerSession]
 };
 
 export var state = {
@@ -51,13 +51,19 @@ export var state = {
   priceMin: 0,
   priceMax: 0,
   plannerOpen: false,
+  plannerCalOpen: false,
   planDate: '',
-  plan: [],
+  plans: {},   // { 'YYYY-MM-DD': [PlannerSession, ...] }
+  plan: [],    // derived: plans[planDate] || []
   plannerDateSessions: {},
+  plannerTimes: {},
+  _prevSortKey: null,
+  _prevSortAsc: true,
   calendarOpen: false,
   colChooserOpen: false,
   exportOpen: false,
   priceOpen: false,
+  overflowOpen: false,
   worker: null,
   workerReady: false,
   scrollRAF: 0,

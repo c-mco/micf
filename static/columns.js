@@ -4,6 +4,7 @@
 
 export var COLUMNS = [
   { key: 'Title',              label: 'Title',         width: 280, minWidth: 120, filter: 'text',   align: 'left',   visible: true,  locked: true,  group: 'Show Info' },
+  { key: 'PlanTime',           label: 'Time',          width: 70,  minWidth: 55,  filter: 'none',   align: 'left',   visible: false, locked: false, group: 'Show Info' },
   { key: 'Artist',             label: 'Artist',        width: 160, minWidth: 80,  filter: 'text',   align: 'left',   visible: true,  locked: false, group: 'Show Info' },
   { key: 'Dates',              label: 'Dates',         width: 110, minWidth: 70,  filter: 'text',   align: 'left',   visible: true,  locked: false, group: 'Show Info' },
   { key: 'VenueName',          label: 'Venue',         width: 170, minWidth: 80,  filter: 'text',   align: 'left',   visible: true,  locked: false, group: 'Venue' },
@@ -28,7 +29,7 @@ export var COLUMNS = [
 
 export var COLUMN_GROUPS = ['Show Info', 'Venue', 'Sessions', 'Accessibility'];
 
-export var SORTABLE_NONE = { Count: 1, Distance: 1, Capacity: 1, SoldOutCount: 1, Duration: 1, Price: 1 };
+export var SORTABLE_NONE = { Count: 1, Distance: 1, Capacity: 1, SoldOutCount: 1, Duration: 1, Price: 1, PlanTime: 1 };
 
 export function isSortable(col) {
   return col.filter !== 'none' || SORTABLE_NONE[col.key];
