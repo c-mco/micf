@@ -39,68 +39,106 @@ export default async function globalSetup() {
 
   const db = new Database(TEST_DB);
 
+  // Full schema — mirrors db.go base tables + all migrations applied inline.
+  // Keeping this in sync with db.go avoids a race between InitDB ALTER TABLE
+  // migrations and the first incoming HTTP request during test startup.
   db.exec(`
     CREATE TABLE IF NOT EXISTS venues (
-      id                  INTEGER PRIMARY KEY,
-      name                TEXT,
-      address             TEXT,
-      suburb              TEXT,
-      location            TEXT,
-      capacity            INTEGER,
-      wheelchair_access   BOOLEAN,
-      disabled_toilets    BOOLEAN,
-      website             TEXT,
-      latitude            REAL,
-      longitude           REAL,
-      phone_number        TEXT,
+      id                    INTEGER PRIMARY KEY,
+      name                  TEXT,
+      address               TEXT,
+      suburb                TEXT,
+      location              TEXT,
+      capacity              INTEGER,
+      wheelchair_access     BOOLEAN,
+      disabled_toilets      BOOLEAN,
+      website               TEXT,
+      latitude              REAL,
+      longitude             REAL,
+      phone_number          TEXT,
       accessibility_details TEXT,
-      adults_only         BOOLEAN,
-      assisted_hearing    BOOLEAN,
-      box_office          BOOLEAN,
-      booking_phone_number TEXT
+      adults_only           BOOLEAN,
+      assisted_hearing      BOOLEAN,
+      box_office            BOOLEAN,
+      booking_phone_number  TEXT,
+      geocode_attempted     BOOLEAN
     );
 
     CREATE TABLE IF NOT EXISTS shows (
-      id              INTEGER PRIMARY KEY,
-      title           TEXT,
-      artist          TEXT,
-      url             TEXT,
-      venue_summary   TEXT,
-      dates           TEXT,
-      show_count      TEXT,
-      image_url       TEXT,
-      small_image_url TEXT,
-      online_show     BOOLEAN,
-      on_demand_show  BOOLEAN,
-      status          TEXT,
-      venue_id        INTEGER,
-      large_image_url TEXT,
-      description     TEXT,
-      duration        INTEGER,
+      id               INTEGER PRIMARY KEY,
+      title            TEXT,
+      artist           TEXT,
+      url              TEXT,
+      venue_summary    TEXT,
+      dates            TEXT,
+      show_count       TEXT,
+      image_url        TEXT,
+      small_image_url  TEXT,
+      online_show      BOOLEAN,
+      on_demand_show   BOOLEAN,
+      status           TEXT,
+      venue_id         INTEGER,
+      large_image_url  TEXT,
+      description      TEXT,
+      duration         INTEGER,
       content_warnings TEXT,
-      price_range     TEXT,
-      tags            TEXT
+      price_range      TEXT,
+      tags             TEXT,
+      guide_image_url  TEXT,
+      video_embed_url  TEXT,
+      red61_show_id    TEXT,
+      availability_level TEXT,
+      sorting_title    TEXT
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
-      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-      show_id             INTEGER,
-      date                TEXT,
-      time                TEXT,
-      full_date           TEXT,
-      is_tight_arse       BOOLEAN DEFAULT 0,
-      is_sold_out         BOOLEAN DEFAULT 0,
-      cancelled           BOOLEAN DEFAULT 0,
-      session_id          INTEGER,
-      status              TEXT,
-      preview             BOOLEAN DEFAULT 0,
-      laugh_pack          BOOLEAN DEFAULT 0,
-      extra_show          BOOLEAN DEFAULT 0,
-      has_sign_interpreter BOOLEAN DEFAULT 0,
-      show_type           TEXT,
-      is_filmed           BOOLEAN DEFAULT 0,
-      is_relaxed          BOOLEAN DEFAULT 0,
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      show_id               INTEGER,
+      date                  TEXT,
+      time                  TEXT,
+      full_date             TEXT,
+      is_tight_arse         BOOLEAN DEFAULT 0,
+      is_sold_out           BOOLEAN DEFAULT 0,
+      cancelled             BOOLEAN DEFAULT 0,
+      session_id            INTEGER,
+      status                TEXT,
+      preview               BOOLEAN DEFAULT 0,
+      laugh_pack            BOOLEAN DEFAULT 0,
+      extra_show            BOOLEAN DEFAULT 0,
+      has_sign_interpreter  BOOLEAN DEFAULT 0,
+      show_type             TEXT,
+      is_filmed             BOOLEAN DEFAULT 0,
+      is_relaxed            BOOLEAN DEFAULT 0,
+      performance_ref       TEXT,
+      availability_level    TEXT,
+      availability_percentage INTEGER,
+      min_price             REAL,
+      max_price             REAL,
+      is_free_show          BOOLEAN DEFAULT 0,
+      ticket_types_json     TEXT,
+      venue_id              INTEGER,
       FOREIGN KEY(show_id) REFERENCES shows(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS session_history (
+      id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id              INTEGER,
+      show_id                 INTEGER,
+      scraped_at              TEXT,
+      availability_percentage INTEGER,
+      availability_level      TEXT,
+      is_sold_out             BOOLEAN,
+      min_price               REAL,
+      max_price               REAL,
+      status                  TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS show_history (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      show_id            INTEGER,
+      scraped_at         TEXT,
+      status             TEXT,
+      availability_level TEXT
     );
   `);
 
@@ -138,33 +176,44 @@ export default async function globalSetup() {
   const insertSession = db.prepare(`
     INSERT INTO sessions
       (show_id, date, time, full_date,
-       is_tight_arse, is_sold_out, has_sign_interpreter, is_relaxed, preview)
+       is_tight_arse, is_sold_out, has_sign_interpreter, is_relaxed, preview,
+       session_id, min_price, max_price, is_free_show, availability_percentage)
     VALUES
       (@show_id, @date, @time, @full_date,
-       @is_tight_arse, @is_sold_out, @has_sign_interpreter, @is_relaxed, @preview)
+       @is_tight_arse, @is_sold_out, @has_sign_interpreter, @is_relaxed, @preview,
+       @session_id, @min_price, @max_price, @is_free_show, @availability_percentage)
   `);
 
-  const sess = (show_id: number, date: string, time: string, overrides: Record<string, number> = {}) =>
-    insertSession.run({ show_id, date, time, full_date: `${date}T${time.replace(' PM','').replace(' AM','')}:00`, is_tight_arse: 0, is_sold_out: 0, has_sign_interpreter: 0, is_relaxed: 0, preview: 0, ...overrides });
+  let nextSessionId = 1;
+  const sess = (show_id: number, date: string, time: string, overrides: Record<string, any> = {}) =>
+    insertSession.run({
+      show_id, date, time,
+      full_date: `${date}T${time}:00`,
+      is_tight_arse: 0, is_sold_out: 0, has_sign_interpreter: 0, is_relaxed: 0, preview: 0,
+      session_id: nextSessionId++,
+      min_price: 30, max_price: 35,
+      is_free_show: 0, availability_percentage: 80,
+      ...overrides,
+    });
 
-  // Show 1 — three days
-  sess(1, '2026-03-20', '19:00', {});
-  sess(1, '2026-03-21', '19:00', {});
-  sess(1, '2026-03-22', '19:00', {});
+  // Show 1 — three days, $30-$35, normal availability
+  sess(1, '2026-03-20', '19:00');
+  sess(1, '2026-03-21', '19:00');
+  sess(1, '2026-03-22', '19:00');
 
-  // Show 2 — single day (only 2026-03-20)
-  sess(2, '2026-03-20', '20:00', {});
+  // Show 2 — single day, $45-$50
+  sess(2, '2026-03-20', '20:00', { min_price: 45, max_price: 50 });
 
-  // Show 3 — weekend only (no 2026-03-20)
-  sess(3, '2026-03-21', '21:00', {});
-  sess(3, '2026-03-22', '21:00', {});
+  // Show 3 — weekend, $20 flat, LOW availability (Hot badge <20%)
+  sess(3, '2026-03-21', '21:00', { min_price: 20, max_price: 20, availability_percentage: 10 });
+  sess(3, '2026-03-22', '21:00', { min_price: 20, max_price: 20, availability_percentage: 10 });
 
-  // Show 4 — late night with tight-arse sessions (no 2026-03-20)
-  sess(4, '2026-03-22', '22:00', { is_tight_arse: 1 });
-  sess(4, '2026-03-23', '22:00', { is_tight_arse: 1 });
+  // Show 4 — late night, tight-arse $25, MEDIUM availability (Filling badge 20-40%)
+  sess(4, '2026-03-22', '22:00', { is_tight_arse: 1, min_price: 25, max_price: 25, availability_percentage: 30 });
+  sess(4, '2026-03-23', '22:00', { is_tight_arse: 1, min_price: 25, max_price: 25, availability_percentage: 30 });
 
-  // Show 5 — sign interpreter + relaxed (no 2026-03-20)
-  sess(5, '2026-03-21', '18:00', { has_sign_interpreter: 1, is_relaxed: 1 });
+  // Show 5 — FREE, sign interpreter + relaxed
+  sess(5, '2026-03-21', '18:00', { has_sign_interpreter: 1, is_relaxed: 1, min_price: 0, max_price: 0, is_free_show: 1 });
 
   db.close();
   console.log(`[global-setup] Test DB created at ${TEST_DB}`);

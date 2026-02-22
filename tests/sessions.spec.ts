@@ -22,12 +22,10 @@ test.describe('Session panel', () => {
     await page.locator('tr.data-row[data-id="1"]').click();
     // The detail row is populated via /api/sessions fetch; wait for it
     await page.waitForResponse(resp => resp.url().includes('/api/sessions') && resp.status() === 200);
-    // Each session renders as a row in the session table
-    const sessionRows = page.locator('tr.detail-session, .session-row, tr.session');
-    // Flexible: we just verify at least one session date appears
-    await expect(page.locator('text=2026-03-20, text=Mar 20').first().or(
-      page.locator(':text("2026-03-20")').first()
-    )).toBeVisible({ timeout: 3000 });
+    // Dates render as "Fri 20 Mar" — verify at least one of the expected dates appears
+    await expect(
+      page.locator(':text("20 Mar")').first()
+    ).toBeVisible({ timeout: 3000 });
   });
 
   test('session panel for show 2 shows tight-arse indicator for show 4', async ({ page }) => {

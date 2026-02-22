@@ -537,11 +537,13 @@ func FetchAndSaveVenues(forceGeocode bool) VenueStats {
 	return stats
 }
 
-// geocodeVenue uses Nominatim structured search to resolve a venue address to lat/lng.
-// Using structured fields (street/city/state) instead of a free-form query avoids
-// matching streets in outer suburbs that share the same name.
+// geocodeVenue resolves a venue to lat/lng via two Nominatim attempts:
+//  1. Structured search by address + city (avoids outer-suburb false matches)
+//  2. Free-form search by venue name, stripping room suffix (e.g. "Hall - Room" → "Hall")
+//
+// A 1-second sleep is inserted between attempts to respect Nominatim's rate limit.
 func geocodeVenue(v Venue) (float64, float64) {
-	if v.Address == "" {
+	if v.Address == "" && v.Name == "" {
 		return 0, 0
 	}
 
@@ -550,11 +552,37 @@ func geocodeVenue(v Venue) (float64, float64) {
 		city = v.Suburb
 	}
 
-	apiURL := fmt.Sprintf(
-		"https://nominatim.openstreetmap.org/search?format=json&limit=1&street=%s&city=%s&state=Victoria&country=Australia",
-		url.QueryEscape(v.Address), url.QueryEscape(city),
-	)
-	req, err := http.NewRequest("GET", apiURL, nil)
+	// Attempt 1: structured address search
+	if v.Address != "" {
+		params := "street=" + url.QueryEscape(v.Address) +
+			"&city=" + url.QueryEscape(city) +
+			"&state=Victoria&country=Australia"
+		if lat, lng := nominatimLookup(params); lat != 0 {
+			return lat, lng
+		}
+		time.Sleep(1 * time.Second) // rate-limit gap before next attempt
+	}
+
+	// Attempt 2: free-form search by venue name (strip room suffix for better matching)
+	if v.Name != "" {
+		name := v.Name
+		if before, _, ok := strings.Cut(name, " - "); ok {
+			name = strings.TrimSpace(before)
+		}
+		params := "q=" + url.QueryEscape(name+", Melbourne, Victoria, Australia")
+		if lat, lng := nominatimLookup(params); lat != 0 {
+			return lat, lng
+		}
+	}
+
+	return 0, 0
+}
+
+// nominatimLookup makes a single Nominatim search request with the given query params
+// (everything after "format=json&limit=1&").
+func nominatimLookup(queryParams string) (float64, float64) {
+	req, err := http.NewRequest("GET",
+		"https://nominatim.openstreetmap.org/search?format=json&limit=1&"+queryParams, nil)
 	if err != nil {
 		return 0, 0
 	}

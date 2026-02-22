@@ -1,0 +1,132 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - link "Insights" [ref=e3] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e4]: Insights
+    - generic [ref=e5]:
+      - img
+      - textbox "Search shows, artists, venues..." [ref=e6]
+    - button "Free" [ref=e7] [cursor=pointer]
+    - button "Price" [ref=e9] [cursor=pointer]
+    - button "Location" [ref=e10] [cursor=pointer]
+    - button "Dates" [ref=e12] [cursor=pointer]
+    - button "Planner" [ref=e13] [cursor=pointer]
+    - button "Columns" [ref=e15] [cursor=pointer]
+    - button "Export" [ref=e17] [cursor=pointer]
+    - button "Comfortable" [ref=e18] [cursor=pointer]
+  - main [ref=e19]:
+    - table [ref=e20]:
+      - rowgroup [ref=e31]:
+        - row "Title⇕ Artist⇕ Dates▲ Venue⇕ Suburb⇕ Region⇕ Sessions⇕ Price⇕ Tight Arse⇕" [ref=e32]:
+          - columnheader "Title⇕" [ref=e33] [cursor=pointer]: Title⇕
+          - columnheader "Artist⇕" [ref=e35] [cursor=pointer]: Artist⇕
+          - columnheader "Dates▲" [ref=e37] [cursor=pointer]: Dates▲
+          - columnheader "Venue⇕" [ref=e39] [cursor=pointer]: Venue⇕
+          - columnheader "Suburb⇕" [ref=e41] [cursor=pointer]: Suburb⇕
+          - columnheader "Region⇕" [ref=e43] [cursor=pointer]: Region⇕
+          - columnheader "Sessions⇕" [ref=e45] [cursor=pointer]: Sessions⇕
+          - columnheader "Price⇕" [ref=e47] [cursor=pointer]: Price⇕
+          - columnheader "Tight Arse⇕" [ref=e49] [cursor=pointer]: Tight Arse⇕
+        - row "▾ All ▾ All ▾ All" [ref=e51]:
+          - columnheader [ref=e52]:
+            - textbox "Filter..." [ref=e53]
+          - columnheader [ref=e54]:
+            - textbox "Filter..." [ref=e55]
+          - columnheader "▾" [ref=e56]:
+            - generic [ref=e57]:
+              - textbox "Filter..." [ref=e58]
+              - button "▾" [ref=e59] [cursor=pointer]
+          - columnheader [ref=e60]:
+            - textbox "Filter..." [ref=e61]
+          - columnheader "All ▾" [ref=e62]:
+            - generic [ref=e63] [cursor=pointer]:
+              - generic [ref=e64]: All
+              - generic [ref=e65]: ▾
+          - columnheader "All ▾" [ref=e66]:
+            - generic [ref=e67] [cursor=pointer]:
+              - generic [ref=e68]: All
+              - generic [ref=e69]: ▾
+          - columnheader [ref=e70]
+          - columnheader [ref=e71]
+          - columnheader "All" [ref=e72]:
+            - combobox [ref=e73]:
+              - option "All" [selected]
+              - option "Yes"
+              - option "No"
+      - rowgroup [ref=e74]:
+        - row "Single Night Special Sam Blue 20 Mar Southbank Theatre Southbank South 1 -" [ref=e75] [cursor=pointer]:
+          - cell "Single Night Special" [ref=e76]:
+            - link "Single Night Special" [ref=e77]:
+              - /url: https://www.comedyfestival.com.au/shows/single-night-special
+          - cell "Sam Blue" [ref=e78]
+          - cell "20 Mar" [ref=e79]
+          - cell "Southbank Theatre" [ref=e80]
+          - cell "Southbank" [ref=e81]
+          - cell "South" [ref=e82]
+          - cell "1" [ref=e83]
+          - cell "-" [ref=e84]
+          - cell [ref=e85]
+        - row "The Comedian Alex Rivers 20-22 Mar The Forum Melbourne CBD 3 -" [ref=e86] [cursor=pointer]:
+          - cell "The Comedian" [ref=e87]:
+            - link "The Comedian" [ref=e88]:
+              - /url: https://www.comedyfestival.com.au/shows/the-comedian
+          - cell "Alex Rivers" [ref=e89]
+          - cell "20-22 Mar" [ref=e90]
+          - cell "The Forum" [ref=e91]
+          - cell "Melbourne" [ref=e92]
+          - cell "CBD" [ref=e93]
+          - cell "3" [ref=e94]
+          - cell "-" [ref=e95]
+          - cell [ref=e96]
+        - row "Acoustic Set Riley Park 21 Mar The Forum Melbourne CBD 1 -" [ref=e97] [cursor=pointer]:
+          - cell "Acoustic Set" [ref=e98]:
+            - link "Acoustic Set" [ref=e99]:
+              - /url: https://www.comedyfestival.com.au/shows/acoustic-set
+          - cell "Riley Park" [ref=e100]
+          - cell "21 Mar" [ref=e101]
+          - cell "The Forum" [ref=e102]
+          - cell "Melbourne" [ref=e103]
+          - cell "CBD" [ref=e104]
+          - cell "1" [ref=e105]
+          - cell "-" [ref=e106]
+          - cell [ref=e107]
+        - row "Weekend Warrior Jordan Marsh 21-22 Mar The Night Owl Fitzroy North 2 -" [ref=e108] [cursor=pointer]:
+          - cell "Weekend Warrior" [ref=e109]:
+            - link "Weekend Warrior" [ref=e110]:
+              - /url: https://www.comedyfestival.com.au/shows/weekend-warrior
+          - cell "Jordan Marsh" [ref=e111]
+          - cell "21-22 Mar" [ref=e112]
+          - cell "The Night Owl" [ref=e113]
+          - cell "Fitzroy" [ref=e114]
+          - cell "North" [ref=e115]
+          - cell "2" [ref=e116]
+          - cell "-" [ref=e117]
+          - cell [ref=e118]
+        - row "Late Night Casey Voss 22-23 Mar The Forum Melbourne CBD 2 - $" [ref=e119] [cursor=pointer]:
+          - cell "Late Night" [ref=e120]:
+            - link "Late Night" [ref=e121]:
+              - /url: https://www.comedyfestival.com.au/shows/late-night
+          - cell "Casey Voss" [ref=e122]
+          - cell "22-23 Mar" [ref=e123]
+          - cell "The Forum" [ref=e124]
+          - cell "Melbourne" [ref=e125]
+          - cell "CBD" [ref=e126]
+          - cell "2" [ref=e127]
+          - cell "-" [ref=e128]
+          - cell "$" [ref=e129]:
+            - generic [ref=e130]: $
+  - contentinfo [ref=e131]:
+    - generic [ref=e132]: Showing 5 of 5 shows
+    - generic [ref=e133]: Press / to search • P for planner
+  - generic [ref=e134]:
+    - generic [ref=e135]:
+      - generic [ref=e136]: Day Plan
+      - button "×" [ref=e137] [cursor=pointer]
+    - generic [ref=e140]:
+      - text: No shows planned.
+      - text: Pick a date to get started.
+    - button "Clear" [ref=e142] [cursor=pointer]
+```

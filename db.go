@@ -215,9 +215,11 @@ func GetExistingVenueCoords(id int) (float64, float64) {
 // GetExistingShowData returns a snapshot of all current shows for change detection
 func GetExistingShowData() map[int]ShowSnapshot {
 	result := make(map[int]ShowSnapshot)
-	rows, err := db.Query(`SELECT s.id, s.title, s.artist, s.url, s.venue_summary,
-		(SELECT COUNT(*) FROM sessions WHERE show_id = s.id)
-		FROM shows s`)
+	rows, err := db.Query(`
+		SELECT s.id, s.title, s.artist, s.url, s.venue_summary, COUNT(sess.id)
+		FROM shows s
+		LEFT JOIN sessions sess ON sess.show_id = s.id
+		GROUP BY s.id`)
 	if err != nil {
 		fmt.Printf("❌ GetExistingShowData: %v\n", err)
 		return result
@@ -293,33 +295,52 @@ func SaveShow(show Show, sessions []Session) {
 		}
 	}
 
-	// Record session history (change-only: only insert if key fields changed vs last row)
+	// Record session history — compare against the actual latest row per session.
+	// Load all latest history for this show's sessions in one query, then insert
+	// only where key fields have changed (avoids N correlated subqueries).
+	type histSnap struct{ pct, soldOut int; status string }
+	latestHist := make(map[int]histSnap)
+	if hrows, err := tx.Query(`
+		SELECT h.session_id, h.availability_percentage, h.is_sold_out, h.status
+		FROM session_history h
+		INNER JOIN (
+			SELECT session_id, MAX(scraped_at) AS latest_at
+			FROM session_history WHERE show_id = ?
+			GROUP BY session_id
+		) m ON h.session_id = m.session_id AND h.scraped_at = m.latest_at`,
+		show.ID); err == nil {
+		for hrows.Next() {
+			var sid int
+			var snap histSnap
+			hrows.Scan(&sid, &snap.pct, &snap.soldOut, &snap.status)
+			latestHist[sid] = snap
+		}
+		hrows.Close()
+	}
 	for _, s := range sessions {
 		if s.SessionID == 0 {
 			continue
 		}
-		tx.Exec(`INSERT INTO session_history (session_id, show_id, scraped_at, availability_percentage, availability_level, is_sold_out, min_price, max_price, status)
-			SELECT ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?
-			WHERE NOT EXISTS (
-				SELECT 1 FROM session_history
-				WHERE session_id = ?
-				AND availability_percentage = ? AND is_sold_out = ? AND status = ?
-				ORDER BY scraped_at DESC LIMIT 1
-			)`,
-			s.SessionID, show.ID, s.AvailabilityPct, s.AvailabilityLevel, s.IsSoldOut, s.MinPrice, s.MaxPrice, s.Status,
-			s.SessionID, s.AvailabilityPct, s.IsSoldOut, s.Status)
+		soldOutInt := 0
+		if s.IsSoldOut {
+			soldOutInt = 1
+		}
+		last, exists := latestHist[s.SessionID]
+		if !exists || last.pct != s.AvailabilityPct || last.soldOut != soldOutInt || last.status != s.Status {
+			tx.Exec(`INSERT INTO session_history (session_id, show_id, scraped_at, availability_percentage, availability_level, is_sold_out, min_price, max_price, status)
+				VALUES (?, ?, datetime('now'), ?, ?, ?, ?, ?, ?)`,
+				s.SessionID, show.ID, s.AvailabilityPct, s.AvailabilityLevel, s.IsSoldOut, s.MinPrice, s.MaxPrice, s.Status)
+		}
 	}
 
-	// Record show history (change-only)
-	tx.Exec(`INSERT INTO show_history (show_id, scraped_at, status, availability_level)
-		SELECT ?, datetime('now'), ?, ?
-		WHERE NOT EXISTS (
-			SELECT 1 FROM show_history
-			WHERE show_id = ? AND status = ? AND availability_level = ?
-			ORDER BY scraped_at DESC LIMIT 1
-		)`,
-		show.ID, show.Status, show.AvailabilityLevel,
-		show.ID, show.Status, show.AvailabilityLevel)
+	// Record show history — compare against latest row (1 query, not INSERT-SELECT-WHERE)
+	var lastStatus, lastLevel string
+	tx.QueryRow(`SELECT status, availability_level FROM show_history WHERE show_id = ? ORDER BY scraped_at DESC LIMIT 1`,
+		show.ID).Scan(&lastStatus, &lastLevel)
+	if lastStatus != show.Status || lastLevel != show.AvailabilityLevel {
+		tx.Exec(`INSERT INTO show_history (show_id, scraped_at, status, availability_level) VALUES (?, datetime('now'), ?, ?)`,
+			show.ID, show.Status, show.AvailabilityLevel)
+	}
 
 	if err := tx.Commit(); err != nil {
 		fmt.Printf("❌ SaveShow commit (%s): %v\n", show.Title, err)

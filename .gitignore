@@ -14,5 +14,9 @@ tmp/
 # Claude Code
 .claude/
 
+# Playwright test artifacts
+test-results/
+playwright-report/
+
 # macOS
 .DS_Store
