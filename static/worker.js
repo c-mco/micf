@@ -2,8 +2,6 @@
 // MICF Insights — Filter/Sort Web Worker
 // ============================================================
 
-importScripts('./filter.js');
-
 var shows = [];
 var workerFilterTypes = {};
 

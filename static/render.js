@@ -223,16 +223,20 @@ function renderDetailRow(show, colCount) {
   var sessionsHTML = sessions ? renderSessionTable(sessions) : '<div class="detail-loading">Loading sessions...</div>';
 
   var imgSrc = show.LargeImageURL || show.ImageURL || show.SmallImageURL;
-  var img = imgSrc
-    ? '<img src="' + escapeHTML(imgSrc) + '" class="detail-thumb" alt="">'
+  var bannerHTML = imgSrc
+    ? '<div class="detail-banner" style="background-image:url(\'' + escapeHTML(imgSrc) + '\')">' +
+      '<div class="detail-banner-overlay"></div></div>'
     : '';
 
-  var mapsLink = (show.Lat && show.Lng)
-    ? '<a href="' + directionsUrl(show) + '" target="_blank" class="maps-link">Maps</a>'
-    : '';
+  var subtitle = escapeHTML(show.Artist || '');
+  if (show.VenueName) subtitle += ' \u00b7 ' + escapeHTML(show.VenueName);
+  if (show.Duration) subtitle += ' \u00b7 ' + show.Duration + '\u202fmin';
 
-  var durationBadge = show.Duration
-    ? '<span class="badge badge-slate">' + show.Duration + ' min</span>'
+  var mapsChip = (show.Lat && show.Lng)
+    ? '<a href="' + directionsUrl(show) + '" target="_blank" class="action-chip action-chip-maps">Maps</a>'
+    : '';
+  var trailerChip = show.VideoEmbedURL
+    ? '<a href="' + escapeHTML(show.VideoEmbedURL) + '" target="_blank" class="action-chip action-chip-trailer">Trailer</a>'
     : '';
 
   var descHTML = show.Description
@@ -240,23 +244,22 @@ function renderDetailRow(show, colCount) {
     : '';
 
   return '<tr class="detail-row"><td colspan="' + colCount + '">' +
-    '<div class="detail-inner"><div class="detail-top">' +
-    img +
-    '<div class="detail-info">' +
-    '<div class="detail-header">' +
-    '<span class="detail-title">' + escapeHTML(show.Title) + '</span>' +
-    '<span class="detail-artist">' + escapeHTML(show.Artist) + '</span>' +
-    '<span class="detail-venue">' + escapeHTML(show.VenueName) + '</span>' +
-    durationBadge +
-    '<div class="detail-links">' +
-    '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank">MICF Page</a>' +
-    mapsLink +
-    (show.VideoEmbedURL ? '<a href="' + escapeHTML(show.VideoEmbedURL) + '" target="_blank" class="trailer-link">Trailer</a>' : '') +
+    '<div class="detail-inner">' +
+    bannerHTML +
+    '<div class="detail-content">' +
+    '<div class="detail-title-row">' +
+    '<div class="detail-title-group">' +
+    '<div class="detail-title">' + escapeHTML(show.Title) + '</div>' +
+    '<div class="detail-subtitle">' + subtitle + '</div>' +
+    '</div>' +
+    '<div class="detail-action-chips">' +
+    '<a href="https://www.comedyfestival.com.au' + escapeHTML(show.URL) + '" target="_blank" class="action-chip">MICF Page</a>' +
+    mapsChip + trailerChip +
     '</div></div>' +
     descHTML +
     '<div id="sessions-' + show.ID + '" class="detail-sessions">' + sessionsHTML + '</div>' +
     (show.AccessibilityDetails ? '<div class="detail-accessibility">' + show.AccessibilityDetails + '</div>' : '') +
-    '</div></div></div></td></tr>';
+    '</div></div></td></tr>';
 }
 
 var SESSION_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -273,7 +276,12 @@ export function renderSessionTable(sessions) {
   if (!sessions || sessions.length === 0) return '<div class="detail-loading">No sessions found</div>';
 
   var rows = sessions.map(function(s) {
-    var rowClass = s.IsSoldOut ? ' class="sold-out"' : s.Cancelled ? ' class="cancelled"' : '';
+    var rowClass = s.IsSoldOut ? ' class="sold-out"'
+      : s.Cancelled ? ' class="cancelled"'
+      : s.AvailabilityPct > 60 ? ' class="avail-row-high"'
+      : s.AvailabilityPct > 25 ? ' class="avail-row-med"'
+      : s.AvailabilityPct > 0  ? ' class="avail-row-low"'
+      : '';
     var statusBadge = s.IsSoldOut ? '<span class="badge badge-red">Sold Out</span>'
       : s.Cancelled ? '<span class="badge badge-slate">Cancelled</span>'
       : '<span class="badge badge-green">' + escapeHTML(s.Status || 'Available') + '</span>';

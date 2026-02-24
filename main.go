@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"embed"
 	"flag"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strings"
 	"sync"
 )
 
@@ -56,6 +59,54 @@ var (
 	datesCacheMu  sync.RWMutex
 	datesCacheRaw []byte
 )
+
+// staticRaw and staticGzip hold pre-compressed dist assets for serving.
+var (
+	staticRaw  = map[string][]byte{}
+	staticGzip = map[string][]byte{}
+)
+
+// initStaticCache pre-gzips all dist files at startup for fast serving.
+func initStaticCache(sub fs.FS) {
+	fs.WalkDir(sub, "dist", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		data, err := fs.ReadFile(sub, path)
+		if err != nil {
+			return nil
+		}
+		staticRaw[path] = data
+		var buf bytes.Buffer
+		gz, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+		gz.Write(data)
+		gz.Close()
+		staticGzip[path] = buf.Bytes()
+		return nil
+	})
+}
+
+// handleStaticFile serves files from static/dist/ with immutable caching and gzip.
+func handleStaticFile(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/static/")
+	raw, ok := staticRaw[path]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if strings.HasSuffix(path, ".js") {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	} else if strings.HasSuffix(path, ".css") {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Write(staticGzip[path])
+	} else {
+		w.Write(raw)
+	}
+}
 
 func InvalidatePageCache() {
 	pageCacheMu.Lock()
@@ -296,9 +347,10 @@ func main() {
 		return
 	}
 
-	// Serve embedded static assets (CSS, JS)
+	// Serve embedded static assets (CSS, JS) with gzip + immutable cache
 	staticSub, _ := fs.Sub(staticFS, "static")
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+	initStaticCache(staticSub)
+	http.HandleFunc("/static/", handleStaticFile)
 
 	// Serve service worker from root path for maximum scope.
 	// Prepend CACHE_VERSION so the cache key changes automatically on each build.

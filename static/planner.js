@@ -254,15 +254,21 @@ export function renderPlanner() {
     if (i > 0) {
       var prev = plan[i - 1];
       var travel = travelTime(prev, p);
-      html += '<div class="planner-gap' + (conflict ? ' gap-conflict' : '') + '">' +
+      html += '<div class="planner-gap">' +
         '<span class="planner-gap-line"></span>' +
         '<span class="planner-gap-label">~' + travel + '\u202fmin</span>' +
         '<span class="planner-gap-line"></span>' +
         '</div>';
     }
 
-    var conflictBadge = conflict
-      ? ' <span class="badge badge-amber" title="' + escapeHTML(conflictReason(conflict)) + '">\u26a0 Conflict</span>'
+    // Left border colour: green=ok, amber=tight (gap but insufficient travel), red=overlap
+    var itemStatus = 'ok';
+    if (conflict) {
+      itemStatus = conflict.gapMins < 0 ? 'conflict' : 'tight';
+    }
+
+    var conflictWarn = conflict
+      ? '<div class="conflict-warn">\u26a0 ' + escapeHTML(conflictReason(conflict)) + '</div>'
       : '';
     var priceTxt = p.isFreeShow
       ? ' <span class="badge badge-emerald">Free</span>'
@@ -270,12 +276,13 @@ export function renderPlanner() {
 
     if (!p.isFreeShow && p.minPrice) totalCost += p.minPrice;
 
-    html += '<div class="planner-item' + (conflict ? ' planner-conflict' : '') + '">' +
+    html += '<div class="planner-item planner-item-' + itemStatus + '">' +
       '<div class="planner-item-time">' + escapeHTML(p.time || '') + '</div>' +
       '<div class="planner-item-info">' +
         '<div class="planner-item-title">' + escapeHTML(p.title) + '</div>' +
         '<div class="planner-item-meta">' + escapeHTML(p.venueName || '') +
-          ' \u2022 ' + (p.duration || 60) + '\u202fmin' + priceTxt + conflictBadge + '</div>' +
+          ' \u2022 ' + (p.duration || 60) + '\u202fmin' + priceTxt + '</div>' +
+        conflictWarn +
       '</div>' +
       '<button class="planner-remove-btn" data-show-id="' + p.showId + '">&times;</button>' +
     '</div>';

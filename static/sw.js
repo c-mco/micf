@@ -12,17 +12,9 @@
 var CACHE = 'micf-' + CACHE_VERSION;
 
 var PRECACHE = [
-  '/static/app.css',
-  '/static/app.js',
-  '/static/worker.js',
-  '/static/filter.js',
-  '/static/render.js',
-  '/static/state.js',
-  '/static/worker-bridge.js',
-  '/static/events.js',
-  '/static/calendar.js',
-  '/static/columns.js',
-  '/static/utils.js',
+  '/static/dist/bundle.js',
+  '/static/dist/worker.bundle.js',
+  '/static/dist/app.min.css',
 ];
 
 // Install: precache static assets

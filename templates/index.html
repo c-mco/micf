@@ -4,121 +4,124 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MICF Insights</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/dist/app.min.css">
 </head>
 <body class="density-compact">
   <!-- Header -->
   <header class="header">
-    <a href="/" class="logo">
-      <span>Insights</span>
-    </a>
+    <!-- Row 1: brand + secondary actions -->
+    <div class="header-top">
+      <a href="/" class="logo">MICF <span>Insights</span></a>
+      <div class="spacer"></div>
 
-    <div class="search-wrap">
-      <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-      </svg>
-      <input type="text" id="search-input" class="search-input" placeholder="Search shows, artists, venues...">
-      <button id="search-clear" class="search-clear hidden">&times;</button>
-    </div>
+      <!-- Location (hidden at narrow widths) -->
+      <button id="location-btn" class="hdr-btn hide-overflow">Location</button>
+      <button id="unit-btn" class="unit-btn hidden hide-overflow">km</button>
 
-    <div class="spacer"></div>
+      <!-- Column chooser (hidden at narrow widths) -->
+      <div class="dropdown-wrap hide-overflow">
+        <button id="colchooser-btn" class="hdr-btn">Columns</button>
+        <div id="colchooser-panel" class="dropdown-panel colchooser-panel">
+          <div class="dropdown-header">
+            <span>Show/Hide Columns</span>
+            <button id="colchooser-reset">Reset</button>
+          </div>
+          <div id="colchooser-list"></div>
+        </div>
+      </div>
 
-    <!-- Free filter -->
-    <button id="free-filter-btn" class="toolbar-btn">Free</button>
+      <!-- Export (hidden at narrow widths) -->
+      <div class="dropdown-wrap hide-overflow">
+        <button id="export-btn" class="hdr-btn">Export</button>
+        <div id="export-panel" class="dropdown-panel export-panel">
+          <div class="dropdown-header"><span>Export Data</span></div>
+          <a href="/export/json" download class="export-item">
+            <span class="export-icon">{}</span>
+            <div><div class="export-label">JSON</div><div class="export-desc">Structured data, all tables</div></div>
+          </a>
+          <a href="/export/csv" download class="export-item">
+            <span class="export-icon">csv</span>
+            <div><div class="export-label">CSV (ZIP)</div><div class="export-desc">3 CSV files in a ZIP archive</div></div>
+          </a>
+          <a href="/export/excel" download class="export-item">
+            <span class="export-icon green">xl</span>
+            <div><div class="export-label">Excel (.xlsx)</div><div class="export-desc">Spreadsheet with 3 sheets</div></div>
+          </a>
+          <a href="/export/db" download class="export-item">
+            <span class="export-icon">db</span>
+            <div><div class="export-label">SQLite Database</div><div class="export-desc">Raw database file</div></div>
+          </a>
+        </div>
+      </div>
 
-    <!-- Price filter -->
-    <div class="dropdown-wrap">
-      <button id="price-btn" class="toolbar-btn">Price</button>
-      <div id="price-panel" class="dropdown-panel price-panel">
-        <div class="dropdown-header"><span>Price Range</span><button id="price-reset" class="price-reset-btn">Reset</button></div>
-        <div class="price-inputs">
-          <label>Min $<input type="number" id="price-min-input" class="price-input" min="0" placeholder="0"></label>
-          <label>Max $<input type="number" id="price-max-input" class="price-input" min="0" placeholder="any"></label>
+      <!-- Density (hidden at narrow widths) -->
+      <button id="density-btn" class="hdr-btn hide-overflow">Comfortable</button>
+
+      <!-- Overflow menu (shown at narrow widths) -->
+      <div class="dropdown-wrap" id="overflow-wrap">
+        <button id="overflow-btn" class="hdr-btn">&middot;&middot;&middot;</button>
+        <div id="overflow-panel" class="dropdown-panel overflow-panel">
+          <div class="overflow-section">
+            <div class="overflow-section-label">Layout</div>
+            <button id="density-btn-ov" class="overflow-item-btn">Comfortable</button>
+          </div>
+          <div class="overflow-sep"></div>
+          <div class="overflow-section">
+            <div class="overflow-section-label">Columns <button id="colchooser-reset-ov" class="overflow-reset-link">Reset</button></div>
+            <div id="overflow-colchooser-list" class="overflow-colchooser"></div>
+          </div>
+          <div class="overflow-sep"></div>
+          <div class="overflow-section">
+            <div class="overflow-section-label">Export</div>
+            <a href="/export/json" download class="overflow-item-link">JSON</a>
+            <a href="/export/csv" download class="overflow-item-link">CSV (ZIP)</a>
+            <a href="/export/excel" download class="overflow-item-link">Excel (.xlsx)</a>
+            <a href="/export/db" download class="overflow-item-link">SQLite DB</a>
+          </div>
+          <div class="overflow-sep"></div>
+          <div class="overflow-section">
+            <div class="overflow-section-label">Location</div>
+            <button id="location-btn-ov" class="overflow-item-btn">Enable Location</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Location -->
-    <button id="location-btn" class="toolbar-btn hide-overflow">Location</button>
-    <button id="unit-btn" class="unit-btn hidden hide-overflow">km</button>
-
-    <!-- Calendar -->
-    <div class="dropdown-wrap">
-      <button id="date-btn" class="toolbar-btn">Dates</button>
-      <div id="calendar-panel" class="dropdown-panel calendar-panel">
-        <div id="calendar-content"></div>
+    <!-- Row 2: search + filter chips + planner -->
+    <div class="header-bar">
+      <div class="search-wrap">
+        <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        </svg>
+        <input type="text" id="search-input" class="search-input" placeholder="Search shows, artists, venues...">
+        <button id="search-clear" class="search-clear hidden">&times;</button>
       </div>
-    </div>
 
-    <!-- Day Planner -->
-    <button id="planner-btn" class="toolbar-btn">Planner</button>
+      <!-- Filter chips -->
+      <button id="free-filter-btn" class="chip">Free</button>
 
-    <!-- Column chooser (hidden at narrow widths) -->
-    <div class="dropdown-wrap hide-overflow">
-      <button id="colchooser-btn" class="toolbar-btn">Columns</button>
-      <div id="colchooser-panel" class="dropdown-panel colchooser-panel">
-        <div class="dropdown-header">
-          <span>Show/Hide Columns</span>
-          <button id="colchooser-reset">Reset</button>
-        </div>
-        <div id="colchooser-list"></div>
-      </div>
-    </div>
-
-    <!-- Export (hidden at narrow widths) -->
-    <div class="dropdown-wrap hide-overflow">
-      <button id="export-btn" class="toolbar-btn">Export</button>
-      <div id="export-panel" class="dropdown-panel export-panel">
-        <div class="dropdown-header"><span>Export Data</span></div>
-        <a href="/export/json" download class="export-item">
-          <span class="export-icon">{}</span>
-          <div><div class="export-label">JSON</div><div class="export-desc">Structured data, all tables</div></div>
-        </a>
-        <a href="/export/csv" download class="export-item">
-          <span class="export-icon">csv</span>
-          <div><div class="export-label">CSV (ZIP)</div><div class="export-desc">3 CSV files in a ZIP archive</div></div>
-        </a>
-        <a href="/export/excel" download class="export-item">
-          <span class="export-icon green">xl</span>
-          <div><div class="export-label">Excel (.xlsx)</div><div class="export-desc">Spreadsheet with 3 sheets</div></div>
-        </a>
-        <a href="/export/db" download class="export-item">
-          <span class="export-icon">db</span>
-          <div><div class="export-label">SQLite Database</div><div class="export-desc">Raw database file</div></div>
-        </a>
-      </div>
-    </div>
-
-    <!-- Density (hidden at narrow widths) -->
-    <button id="density-btn" class="toolbar-btn hide-overflow">Comfortable</button>
-
-    <!-- Overflow menu (shown at narrow widths) -->
-    <div class="dropdown-wrap" id="overflow-wrap">
-      <button id="overflow-btn" class="toolbar-btn">&middot;&middot;&middot;</button>
-      <div id="overflow-panel" class="dropdown-panel overflow-panel">
-        <div class="overflow-section">
-          <div class="overflow-section-label">Layout</div>
-          <button id="density-btn-ov" class="overflow-item-btn">Comfortable</button>
-        </div>
-        <div class="overflow-sep"></div>
-        <div class="overflow-section">
-          <div class="overflow-section-label">Columns <button id="colchooser-reset-ov" class="overflow-reset-link">Reset</button></div>
-          <div id="overflow-colchooser-list" class="overflow-colchooser"></div>
-        </div>
-        <div class="overflow-sep"></div>
-        <div class="overflow-section">
-          <div class="overflow-section-label">Export</div>
-          <a href="/export/json" download class="overflow-item-link">JSON</a>
-          <a href="/export/csv" download class="overflow-item-link">CSV (ZIP)</a>
-          <a href="/export/excel" download class="overflow-item-link">Excel (.xlsx)</a>
-          <a href="/export/db" download class="overflow-item-link">SQLite DB</a>
-        </div>
-        <div class="overflow-sep"></div>
-        <div class="overflow-section">
-          <div class="overflow-section-label">Location</div>
-          <button id="location-btn-ov" class="overflow-item-btn">Enable Location</button>
+      <div class="dropdown-wrap">
+        <button id="price-btn" class="chip">Price</button>
+        <div id="price-panel" class="dropdown-panel price-panel">
+          <div class="dropdown-header"><span>Price Range</span><button id="price-reset" class="price-reset-btn">Reset</button></div>
+          <div class="price-inputs">
+            <label>Min $<input type="number" id="price-min-input" class="price-input" min="0" placeholder="0"></label>
+            <label>Max $<input type="number" id="price-max-input" class="price-input" min="0" placeholder="any"></label>
+          </div>
         </div>
       </div>
+
+      <div class="dropdown-wrap">
+        <button id="date-btn" class="chip">Dates</button>
+        <div id="calendar-panel" class="dropdown-panel calendar-panel">
+          <div id="calendar-content"></div>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <!-- Planner: primary action -->
+      <button id="planner-btn" class="chip chip-primary">Planner</button>
     </div>
   </header>
 
@@ -167,6 +170,6 @@
       statuses: {{.Statuses}}
     };
   </script>
-  <script type="module" src="/static/app.js"></script>
+  <script src="/static/dist/bundle.js"></script>
 </body>
 </html>

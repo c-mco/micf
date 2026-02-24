@@ -8,7 +8,7 @@ import { renderAll, renderBody } from './render.js';
 
 export function initWorker() {
   try {
-    state.worker = new Worker('/static/worker.js');
+    state.worker = new Worker('/static/dist/worker.bundle.js');
     var filterTypes = {};
     COLUMNS.forEach(function(c) { filterTypes[c.key] = c.filter; });
 
